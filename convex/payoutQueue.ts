@@ -18,7 +18,13 @@ import { requireCurrentUser } from "./lib/auth";
 import { withdraw } from "./lib/plisio";
 
 /** A host is paid once her due earnings add up to this much (USDT). Smaller amounts roll over. */
-const MIN_PAYOUT_USDT = 10;
+
+//Production value change it back after testing
+// const MIN_PAYOUT_USDT = 10;
+
+// Testing value
+const MIN_PAYOUT_USDT = 0.5;
+
 const MAX_ROWS_PER_BATCH = 100;
 
 export const listDueHosts = internalQuery({
@@ -40,7 +46,8 @@ export const claimHost = internalMutation({
   args: { hostId: v.id("hosts"), now: v.number() },
   handler: async (ctx, { hostId, now }) => {
     const host = await ctx.db.get(hostId);
-    if (!host || host.status !== "approved" || !host.payoutAccountRef) return null;
+    if (!host || host.status !== "approved" || !host.payoutAccountRef)
+      return null;
 
     const rows = await ctx.db
       .query("hostPayouts")
@@ -57,7 +64,9 @@ export const claimHost = internalMutation({
       if (payment && owed && payment.kind === "booking") {
         const bookingId = ctx.db.normalizeId("bookings", payment.refId);
         const booking = bookingId ? await ctx.db.get(bookingId) : null;
-        owed = !!booking && (booking.status === "paid" || booking.status === "completed");
+        owed =
+          !!booking &&
+          (booking.status === "paid" || booking.status === "completed");
       }
       if (!owed) {
         // refunded / cancelled before it was due
@@ -70,7 +79,8 @@ export const claimHost = internalMutation({
       valid.push(r);
     }
 
-    const total = Math.floor(valid.reduce((s, r) => s + r.amountUsdt, 0) * 100) / 100;
+    const total =
+      Math.floor(valid.reduce((s, r) => s + r.amountUsdt, 0) * 100) / 100;
     if (valid.length === 0 || total < MIN_PAYOUT_USDT) return null;
 
     const batchId = `batch_${Date.now()}`;
@@ -184,11 +194,15 @@ export const myPayouts = query({
 
     const sum = (pred: (s: string) => boolean) =>
       Math.round(
-        rows.filter((r) => pred(r.status)).reduce((s, r) => s + r.amountUsdt, 0) * 100,
+        rows
+          .filter((r) => pred(r.status))
+          .reduce((s, r) => s + r.amountUsdt, 0) * 100,
       ) / 100;
 
     return {
-      waitingUsdt: sum((s) => s === "pending" || s === "processing" || s === "failed"),
+      waitingUsdt: sum(
+        (s) => s === "pending" || s === "processing" || s === "failed",
+      ),
       sentUsdt: sum((s) => s === "sent"),
       recent: rows.slice(0, 20).map((r) => ({
         amountUsdt: r.amountUsdt,
