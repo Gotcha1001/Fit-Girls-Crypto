@@ -13,6 +13,6 @@ crons.interval(
   internal.payoutQueue.processDue,
   {},
 );
-
+crons.interval("no-show sweep", { minutes: 5 }, internal.noShow.sweep, {});
 
 export default crons;

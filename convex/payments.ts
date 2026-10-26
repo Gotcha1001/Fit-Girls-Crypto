@@ -3,12 +3,12 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { fulfilSecretPhotoOrder } from "./lib/secretPhotoOrders";
 import { createInvoice } from "./lib/plisio";
+import { fulfilPaidBooking } from "./lib/fulfilBooking";
 
 // Hosts are paid this long AFTER the call ends, so a no-show can still be refunded.
 // Set to 0 if you want payouts as soon as the next cron run.
-const BOOKING_HOLD_MS = 24 * 60 * 60 * 1000;
-const GALLERY_HOLD_MS = 24 * 60 * 60 * 1000;
 
+const GALLERY_HOLD_MS = 24 * 60 * 60 * 1000;
 
 type PaystackInitResponse = {
   status: boolean;
@@ -52,7 +52,6 @@ export const initCheckout = action({
   },
 });
 
-
 export const record = internalMutation({
   args: {
     providerReference: v.string(),
@@ -78,7 +77,6 @@ export const record = internalMutation({
   },
 });
 
-
 export const markSucceeded = internalMutation({
   args: {
     reference: v.string(),
@@ -87,7 +85,10 @@ export const markSucceeded = internalMutation({
     txnId: v.string(),
     cryptoNet: v.number(), // USDT received after Plisio's commission
   },
-  handler: async (ctx, { reference, amountCents, currency, txnId, cryptoNet }) => {
+  handler: async (
+    ctx,
+    { reference, amountCents, currency, txnId, cryptoNet },
+  ) => {
     const payment = await ctx.db
       .query("payments")
       .withIndex("by_reference", (q) => q.eq("providerReference", reference))
@@ -103,10 +104,16 @@ export const markSucceeded = internalMutation({
       await ctx.db.patch(payment._id, { status: "failed" });
       return;
     }
+    await ctx.db.patch(payment._id, {
+      status: "succeeded",
+      plisioTxnId: txnId,
+    });
 
-    await ctx.db.patch(payment._id, { status: "succeeded", plisioTxnId: txnId });
-
-    let releaseAt = Date.now() + GALLERY_HOLD_MS;
+    // Her share of the USDT we actually received, rounded down.
+    const hostShareUsdt =
+      Math.floor(
+        cryptoNet * (payment.hostShareCents / payment.amountCents) * 100,
+      ) / 100;
 
     if (payment.kind === "booking") {
       const bookingId = ctx.db.normalizeId("bookings", payment.refId);
@@ -123,42 +130,24 @@ export const markSucceeded = internalMutation({
         });
         return;
       }
-      const roomName = `call_${booking._id}`;
-      await ctx.db.patch(booking._id, {
-        status: "paid",
+      // paid + call room + payout + no-show check, shared with wallet payments
+      await fulfilPaidBooking(ctx, {
+        booking,
         paymentId: payment._id,
-        roomName,
+        hostShareUsdt,
       });
-      releaseAt =
-        (booking.endsAt ?? booking.startsAt + booking.minutes * 60_000) +
-        BOOKING_HOLD_MS;
-
-      const host = await ctx.db.get(booking.hostId);
-      if (host) {
-        await ctx.db.insert("callSessions", {
-          requesterId: booking.guestId,
-          recipientId: host.userId,
-          roomName,
-          status: "accepted",
-          scheduledFor: booking.startsAt,
-          createdAt: Date.now(),
-          bookingId: booking._id,
-        });
-      }
-    } else {
-      const orderId = ctx.db.normalizeId("secretPhotoOrders", payment.refId);
-      if (orderId) await fulfilSecretPhotoOrder(ctx, orderId, payment._id);
+      return;
     }
 
-    // Queue her payout: her share of the USDT we actually received, rounded down.
-    const hostShareUsdt =
-      Math.floor(cryptoNet * (payment.hostShareCents / payment.amountCents) * 100) / 100;
+    // gallery / secret photo order
+    const orderId = ctx.db.normalizeId("secretPhotoOrders", payment.refId);
+    if (orderId) await fulfilSecretPhotoOrder(ctx, orderId, payment._id);
     if (hostShareUsdt > 0) {
       await ctx.db.insert("hostPayouts", {
         hostId: payment.hostId,
         paymentId: payment._id,
         amountUsdt: hostShareUsdt,
-        releaseAt,
+        releaseAt: Date.now() + GALLERY_HOLD_MS,
         status: "pending",
         createdAt: Date.now(),
       });

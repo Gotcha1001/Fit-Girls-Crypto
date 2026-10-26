@@ -29,6 +29,7 @@ import type * as lib_auth from "../lib/auth.js";
 import type * as lib_availability from "../lib/availability.js";
 import type * as lib_currency from "../lib/currency.js";
 import type * as lib_fees from "../lib/fees.js";
+import type * as lib_fulfilBooking from "../lib/fulfilBooking.js";
 import type * as lib_fxRates from "../lib/fxRates.js";
 import type * as lib_geo from "../lib/geo.js";
 import type * as lib_plisio from "../lib/plisio.js";
@@ -39,6 +40,8 @@ import type * as lib_timezones from "../lib/timezones.js";
 import type * as lib_tronAddress from "../lib/tronAddress.js";
 import type * as likes from "../likes.js";
 import type * as messages from "../messages.js";
+import type * as noShow from "../noShow.js";
+import type * as noShowConfig from "../noShowConfig.js";
 import type * as notifications from "../notifications.js";
 import type * as payments from "../payments.js";
 import type * as payoutQueue from "../payoutQueue.js";
@@ -50,6 +53,7 @@ import type * as tokenPayments from "../tokenPayments.js";
 import type * as tokens from "../tokens.js";
 import type * as uploads from "../uploads.js";
 import type * as user from "../user.js";
+import type * as wallet from "../wallet.js";
 
 import type {
   ApiFromModules,
@@ -79,6 +83,7 @@ declare const fullApi: ApiFromModules<{
   "lib/availability": typeof lib_availability;
   "lib/currency": typeof lib_currency;
   "lib/fees": typeof lib_fees;
+  "lib/fulfilBooking": typeof lib_fulfilBooking;
   "lib/fxRates": typeof lib_fxRates;
   "lib/geo": typeof lib_geo;
   "lib/plisio": typeof lib_plisio;
@@ -89,6 +94,8 @@ declare const fullApi: ApiFromModules<{
   "lib/tronAddress": typeof lib_tronAddress;
   likes: typeof likes;
   messages: typeof messages;
+  noShow: typeof noShow;
+  noShowConfig: typeof noShowConfig;
   notifications: typeof notifications;
   payments: typeof payments;
   payoutQueue: typeof payoutQueue;
@@ -100,6 +107,7 @@ declare const fullApi: ApiFromModules<{
   tokens: typeof tokens;
   uploads: typeof uploads;
   user: typeof user;
+  wallet: typeof wallet;
 }>;
 
 /**
