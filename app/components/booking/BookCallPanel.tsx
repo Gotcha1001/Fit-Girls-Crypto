@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 
 import { GirlCalendar } from "./GirlCalendar";
 import { AgeGateDialog } from "../AgeGateDialog";
+import { useRouter } from "next/navigation";
 
 export function BookCallPanel({
   hostId,
@@ -44,6 +45,15 @@ export function BookCallPanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ageOpen, setAgeOpen] = useState(false);
+  const router = useRouter();
+
+  const walletBalance = useQuery(api.wallet.getBalance);
+  const spendOnBooking = useMutation(api.wallet.spendOnBooking);
+  const zar = (cents: number) =>
+    new Intl.NumberFormat("en-ZA", {
+      style: "currency",
+      currency: "ZAR",
+    }).format(cents / 100);
 
   const ageStatus = useQuery(api.ageVerification.myAgeStatus);
   const createBooking = useMutation(api.bookings.createBooking);
@@ -72,6 +82,32 @@ export function BookCallPanel({
       // Safety net if the age query was still loading when they clicked.
       if (msg.includes("Age verification")) setAgeOpen(true);
       else setError(msg);
+      setBusy(false);
+    }
+  }
+
+  // Book, then pay straight from wallet credit (no payment page)
+  async function payWithCredit() {
+    if (startsAt == null || busy) return;
+    if (!ageStatus?.ageVerified) {
+      setAgeOpen(true);
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const bookingId = await createBooking({ hostId, startsAt, minutes });
+      const result = await spendOnBooking({ bookingId });
+      if (!result.ok) {
+        setError(
+          `Your credit (${zar(result.balanceCents)}) doesn't cover this booking (${zar(result.neededCents)}). You can pay by card instead.`,
+        );
+        setBusy(false);
+        return;
+      }
+      router.push(`/bookings/${bookingId}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Something went wrong");
       setBusy(false);
     }
   }
@@ -166,6 +202,16 @@ export function BookCallPanel({
           >
             {busy ? "Redirecting to payment…" : "Continue to payment"}
           </Button>
+          {walletBalance !== undefined && walletBalance > 0 && (
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={payWithCredit}
+              disabled={busy}
+            >
+              Pay with wallet credit ({zar(walletBalance)})
+            </Button>
+          )}
         </div>
       )}
 

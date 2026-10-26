@@ -123,7 +123,8 @@ export default defineSchema({
     .index("by_recipient", ["recipientId"])
     .index("by_requester", ["requesterId"])
     .index("by_recipient_status", ["recipientId", "status"])
-    .index("by_booking", ["bookingId"]), // NEW
+    .index("by_booking", ["bookingId"])
+    .index("by_roomName", ["roomName"]),
 
   likes: defineTable({
     fromUserId: v.id("users"),
@@ -227,10 +228,19 @@ export default defineSchema({
     roomName: v.optional(v.string()),
     hostTimezone: v.optional(v.string()), // snapshots for receipts, disputes, reminders
     guestTimezone: v.optional(v.string()),
+    hostJoinedAt: v.optional(v.number()),
+    guestJoinedAt: v.optional(v.number()),
+    noShowCheckedAt: v.optional(v.number()),
+    noShowArmedAt: v.optional(v.number()),
+    attendance: v.optional(
+      v.union(v.literal("host_no_show"), v.literal("guest_no_show")),
+    ),
   })
     .index("by_host", ["hostId"])
     .index("by_host_time", ["hostId", "startsAt"])
-    .index("by_guest", ["guestId"]),
+    .index("by_guest", ["guestId"])
+    .index("by_roomName", ["roomName"]) // NEW
+    .index("by_status_startsAt", ["status", "startsAt"]), // NEW
 
   galleryItems: defineTable({
     hostId: v.id("hosts"),
@@ -263,7 +273,7 @@ export default defineSchema({
     hostShareCents: v.number(),
     currency: v.string(),
     providerReference: v.string(),
-        plisioTxnId: v.optional(v.string()),
+    plisioTxnId: v.optional(v.string()),
     status: v.union(
       v.literal("initiated"),
       v.literal("succeeded"),
@@ -274,8 +284,7 @@ export default defineSchema({
     .index("by_reference", ["providerReference"])
     .index("by_payer", ["payerId"]),
 
-
-    hostPayouts: defineTable({
+  hostPayouts: defineTable({
     hostId: v.id("hosts"),
     paymentId: v.id("payments"),
     amountUsdt: v.number(), // her 80% of the USDT we actually received
@@ -298,7 +307,6 @@ export default defineSchema({
     .index("by_host_status", ["hostId", "status"])
     .index("by_host", ["hostId"])
     .index("by_payment", ["paymentId"]),
-
 
   // A girl's application. The access code is stored only as a hash.
   hostApplications: defineTable({
@@ -384,4 +392,16 @@ export default defineSchema({
     rates: v.record(v.string(), v.number()), // units of each currency per 1 USD
     updatedAt: v.number(),
   }),
+
+  walletTransactions: defineTable({
+    userId: v.id("users"), // the guest
+    bookingId: v.optional(v.id("bookings")),
+    type: v.union(v.literal("credit"), v.literal("debit")),
+    amountCents: v.number(), // always positive
+    currency: v.string(),
+    reason: v.union(v.literal("host_no_show"), v.literal("booking_payment")),
+    createdAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_booking_reason", ["bookingId", "reason"]),
 });

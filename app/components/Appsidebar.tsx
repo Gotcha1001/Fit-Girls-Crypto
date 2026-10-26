@@ -25,6 +25,7 @@ import {
   ShieldCheck,
   KeyRound,
   UserCog,
+  Wallet,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -45,6 +46,7 @@ const CLIENT_NAV: NavItem[] = [
   { href: "/photos", label: "My Photos", icon: Images }, // NEW: unlocked secret photos
   { href: "/tokens", label: "Tokens", icon: Coins },
   { href: "/gifts", label: "Gifts", icon: Gift },
+  { href: "/wallet", label: "Wallet", icon: Wallet },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 

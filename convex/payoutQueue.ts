@@ -5,6 +5,9 @@
 //   2. claim them (atomic, so two runs can never pay the same row twice),
 //   3. send ONE USDT transfer per host through Plisio,
 //   4. mark the rows sent (or failed).
+//
+// Logging: every decision is logged with the "[payout]" prefix. In the Convex
+// dashboard go to Logs and filter by "[payout]" to see the whole chain.
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
@@ -27,6 +30,10 @@ const MIN_PAYOUT_USDT = 0.5;
 
 const MAX_ROWS_PER_BATCH = 100;
 
+// Shortens a wallet address for logs: TXPtLQ...DB2q
+const maskAddress = (a: string) =>
+  a.length > 12 ? `${a.slice(0, 6)}...${a.slice(-4)}` : a;
+
 export const listDueHosts = internalQuery({
   args: { now: v.number() },
   handler: async (ctx, { now }): Promise<Id<"hosts">[]> => {
@@ -36,7 +43,13 @@ export const listDueHosts = internalQuery({
         q.eq("status", "pending").lte("releaseAt", now),
       )
       .take(500);
-    return [...new Set(rows.map((r) => r.hostId))];
+    const hostIds = [...new Set(rows.map((r) => r.hostId))];
+    console.log("[payout] listDueHosts", {
+      now,
+      dueRows: rows.length,
+      hosts: hostIds.length,
+    });
+    return hostIds;
   },
 });
 
@@ -46,8 +59,21 @@ export const claimHost = internalMutation({
   args: { hostId: v.id("hosts"), now: v.number() },
   handler: async (ctx, { hostId, now }) => {
     const host = await ctx.db.get(hostId);
-    if (!host || host.status !== "approved" || !host.payoutAccountRef)
+    if (!host) {
+      console.log("[payout] claimHost skip: host not found", { hostId });
       return null;
+    }
+    if (host.status !== "approved") {
+      console.log("[payout] claimHost skip: host not approved", {
+        hostId,
+        status: host.status,
+      });
+      return null;
+    }
+    if (!host.payoutAccountRef) {
+      console.log("[payout] claimHost skip: no payoutAccountRef", { hostId });
+      return null;
+    }
 
     const rows = await ctx.db
       .query("hostPayouts")
@@ -55,10 +81,21 @@ export const claimHost = internalMutation({
         q.eq("hostId", hostId).eq("status", "pending"),
       )
       .take(MAX_ROWS_PER_BATCH);
+    console.log("[payout] claimHost pending rows", {
+      hostId,
+      count: rows.length,
+    });
 
     const valid = [];
     for (const r of rows) {
-      if (r.releaseAt > now) continue;
+      if (r.releaseAt > now) {
+        console.log("[payout] claimHost row not yet due", {
+          rowId: r._id,
+          releaseAt: r.releaseAt,
+          now,
+        });
+        continue;
+      }
       const payment = await ctx.db.get(r.paymentId);
       let owed = !!payment && payment.status === "succeeded";
       if (payment && owed && payment.kind === "booking") {
@@ -70,6 +107,10 @@ export const claimHost = internalMutation({
       }
       if (!owed) {
         // refunded / cancelled before it was due
+        console.log("[payout] claimHost row cancelled", {
+          rowId: r._id,
+          paymentStatus: payment?.status,
+        });
         await ctx.db.patch(r._id, {
           status: "cancelled",
           error: "Booking cancelled or refunded before payout",
@@ -81,12 +122,30 @@ export const claimHost = internalMutation({
 
     const total =
       Math.floor(valid.reduce((s, r) => s + r.amountUsdt, 0) * 100) / 100;
-    if (valid.length === 0 || total < MIN_PAYOUT_USDT) return null;
+
+    if (valid.length === 0) {
+      console.log("[payout] claimHost skip: no valid rows", { hostId });
+      return null;
+    }
+    if (total < MIN_PAYOUT_USDT) {
+      console.log("[payout] claimHost skip: below minimum", {
+        hostId,
+        total,
+        MIN_PAYOUT_USDT,
+      });
+      return null;
+    }
 
     const batchId = `batch_${Date.now()}`;
     for (const r of valid) {
       await ctx.db.patch(r._id, { status: "processing", batchId });
     }
+    console.log("[payout] claimHost claimed", {
+      hostId,
+      batchId,
+      total,
+      rows: valid.length,
+    });
     return {
       batchId,
       address: host.payoutAccountRef,
@@ -117,12 +176,19 @@ export const finishBatch = internalMutation({
         await ctx.db.patch(id, { status: "failed", error: a.error });
       }
     }
+    console.log("[payout] finishBatch", {
+      rows: a.ids.length,
+      ok: a.ok,
+      plisioOpId: a.plisioOpId,
+      error: a.error,
+    });
   },
 });
 
 export const processDue = internalAction({
   args: {},
   handler: async (ctx): Promise<void> => {
+    console.log("[payout] processDue start");
     const hostIds: Id<"hosts">[] = await ctx.runQuery(
       internal.payoutQueue.listDueHosts,
       { now: Date.now() },
@@ -133,8 +199,19 @@ export const processDue = internalAction({
         now: Date.now(),
       });
       if (!claim) continue;
+
+      console.log("[payout] sending", {
+        batchId: claim.batchId,
+        address: maskAddress(claim.address),
+        total: claim.total,
+      });
       try {
         const res = await withdraw(claim.address, claim.total);
+        console.log("[payout] plisio success", {
+          batchId: claim.batchId,
+          opId: res.id,
+          txUrl: res.txUrl,
+        });
         await ctx.runMutation(internal.payoutQueue.finishBatch, {
           ids: claim.ids,
           ok: true,
@@ -145,13 +222,19 @@ export const processDue = internalAction({
         // A failed batch is NEVER retried automatically: if the network dropped after
         // Plisio sent the money, retrying would pay her twice. Check Plisio →
         // Transactions first, then run payoutQueue:retryFailed from the dashboard.
+        const message = e instanceof Error ? e.message : String(e);
+        console.error("[payout] plisio FAILED", {
+          batchId: claim.batchId,
+          error: message,
+        });
         await ctx.runMutation(internal.payoutQueue.finishBatch, {
           ids: claim.ids,
           ok: false,
-          error: e instanceof Error ? e.message : String(e),
+          error: message,
         });
       }
     }
+    console.log("[payout] processDue done", { hostsProcessed: hostIds.length });
   },
 });
 
@@ -171,6 +254,7 @@ export const retryFailed = internalMutation({
         batchId: undefined,
       });
     }
+    console.log("[payout] retryFailed requeued", { rows: rows.length });
     return rows.length;
   },
 });

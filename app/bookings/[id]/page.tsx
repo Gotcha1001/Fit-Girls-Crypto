@@ -82,8 +82,31 @@ export default function BookingPage() {
         <p className="text-neutral-300">This call is complete.</p>
       )}
 
-      {booking.status === "cancelled" && (
-        <p className="text-red-400">This booking was cancelled.</p>
+      {booking.status === "cancelled" &&
+      booking.attendance === "host_no_show" ? (
+        <div className="space-y-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-amber-300">
+          <p>
+            {booking.isHost
+              ? "You didn't join this call, so it was cancelled and the client was credited."
+              : "The host didn't join within 5 minutes. The full amount was added to your Wallet."}
+          </p>
+          {!booking.isHost && (
+            <Link href="/wallet" className="underline">
+              Go to Wallet
+            </Link>
+          )}
+        </div>
+      ) : (
+        booking.status === "cancelled" && (
+          <p className="text-red-400">This booking was cancelled.</p>
+        )
+      )}
+      {booking.status === "paid" && booking.attendance === "guest_no_show" && (
+        <p className="text-sm text-neutral-400">
+          {booking.isHost
+            ? "The client didn't join. You will still be paid."
+            : "You didn't join this call. No refund or credit applies."}
+        </p>
       )}
 
       {booking.status === "expired" && (

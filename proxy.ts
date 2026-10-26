@@ -8,6 +8,7 @@ const isPublicRoute = createRouteMatcher([
   "/",
   "/privacy(.*)",
   "/terms(.*)",
+  "/api/livekit-webhook",
 ]);
 
 export default clerkMiddleware(async (auth, req) => {
