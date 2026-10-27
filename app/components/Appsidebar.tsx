@@ -60,7 +60,7 @@ const HOST_NAV: NavItem[] = [
   { href: "/bookings", label: "My Bookings", icon: CalendarCheck },
   { href: "/host/earnings", label: "Earnings", icon: Wallet },
   { href: "/gifts", label: "My Gifts", icon: Gift },
-  { href: "/girl-help", label: "Help", icon: CircleHelp },
+  { href: "/host/girl-help", label: "Help", icon: CircleHelp },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
