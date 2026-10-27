@@ -180,6 +180,7 @@ export default defineSchema({
     payoutProvider: v.string(), // "plisio"
     payoutAccountRef: v.optional(v.string()), // USDT (TRC-20) wallet address
     bankLast4: v.optional(v.string()), //last 4 characters of the wallet address
+    sentTotalUsdt: v.optional(v.number()),
     isOnline: v.boolean(),
     country: v.optional(v.string()),
     timezone: v.optional(v.string()),

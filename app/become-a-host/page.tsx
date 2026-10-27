@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
@@ -101,6 +102,16 @@ export default function BecomeAHostPage() {
         </p>
       )}
 
+      {(status === "pending" || status === "approved") && (
+        <p className="rounded-lg border border-zinc-700 bg-zinc-900/60 p-4 text-sm text-neutral-300">
+          You will need a USDT wallet address to get paid. Get it ready while
+          you wait: see{" "}
+          <Link href="/girl-help" className="text-pink-400 underline">
+            Help
+          </Link>{" "}
+          for a 2-minute setup guide.
+        </p>
+      )}
       {showCode && (
         <form onSubmit={onActivate} className="space-y-3">
           <h2 className="text-lg font-semibold">I have an access code</h2>

@@ -1,300 +1,345 @@
-// convex/payoutQueue.ts
+// convex/payoutQueue.ts  (REPLACE whole file)
 //
-// Pays hosts automatically. A cron (convex/crons.ts) runs processDue every 15 minutes:
-//   1. find hosts with payouts that are due,
-//   2. claim them (atomic, so two runs can never pay the same row twice),
-//   3. send ONE USDT transfer per host through Plisio,
-//   4. mark the rows sent (or failed).
+// Everything about paying hosts lives here:
 //
-// Logging: every decision is logged with the "[payout]" prefix. In the Convex
-// dashboard go to Logs and filter by "[payout]" to see the whole chain.
+//   myEarnings     query            the host's Earnings page reads this
+//   minPayout      query            the payout threshold, for any page that shows it
+//   backfillSentTotals internalMutation  ONE-TIME: fills hosts.sentTotalUsdt
+//   processDue     internalAction   cron (every 15 min): pays hosts who reached the minimum
+//   hostsWithDue   internalQuery    which hosts have released, unpaid rows
+//   claimHost      internalMutation atomically flips a host's due rows to "processing"
+//   markSent       internalMutation after Plisio accepted the withdrawal
+//   markFailed     internalMutation after Plisio refused / errored
+//   requeueFailed  internalMutation manual: failed -> pending (run from the dashboard)
+//
+// Row lifecycle (hostPayouts.status):
+//   pending -> processing -> sent
+//                         -> failed   (NOT retried automatically, see below)
+//   pending|failed -> cancelled       (noShow.evaluate, host no-show)
+//
+// Why failed rows are not retried automatically: if Plisio accepted the
+// withdrawal but our reply was lost, an automatic retry would pay her twice.
+// Check the Plisio dashboard first, then run `requeueFailed` if nothing left.
 import { v } from "convex/values";
-import type { Id } from "./_generated/dataModel";
-import { internal } from "./_generated/api";
 import {
   internalAction,
   internalMutation,
   internalQuery,
   query,
 } from "./_generated/server";
-import { requireCurrentUser } from "./lib/auth";
+import { internal } from "./_generated/api";
+import type { Doc, Id } from "./_generated/dataModel";
+import { getCurrentUser } from "./lib/auth";
+import { getMinPayoutUsdt } from "./lib/payoutConfig";
 import { withdraw } from "./lib/plisio";
+type PayoutStatus = Doc<"hostPayouts">["status"];
+/** Most rows paid in one withdrawal (keeps each mutation small). */
+const MAX_ROWS_PER_PAYOUT = 200;
+/** Most hosts paid in one cron run. */
+const MAX_HOSTS_PER_RUN = 100;
+/** Rows shown in the "Your earnings" list. */
+const RECENT_LIMIT = 20;
+const round2 = (n: number): number => Math.round(n * 100) / 100;
+const errorMessage = (e: unknown): string =>
+  e instanceof Error ? e.message : String(e);
+// ───────────────────────── Earnings page ─────────────────────────
+export type EarningsRow = {
+  id: Id<"hostPayouts">;
+  amountUsdt: number;
+  status: PayoutStatus;
+  releaseAt: number;
+  sentAt: number | null;
+  txUrl: string | null;
+};
+export type Earnings = {
+  minPayoutUsdt: number;
+  hasWallet: boolean;
+  /** Released and waiting for the minimum (includes rows being sent right now). */
+  releasedUsdt: number;
+  /** Still inside the 24 h refund hold. */
+  heldUsdt: number;
+  /** Already paid to her wallet. */
+  sentUsdt: number;
+  /** Payouts that failed and need a look. */
+  problemUsdt: number;
+  /** Everything earned, excluding cancelled rows (exact: paid total comes from hosts.sentTotalUsdt). */
+  lifetimeUsdt: number;
+  /** When the next held row is released, or null if nothing is held. */
+  nextReleaseAt: number | null;
+  recent: EarningsRow[];
+};
+export const myEarnings = query({
+  // `now` comes from the browser (rounded to the minute) so the query is
+  // re-run each minute and "On hold" turns into "Pending" without a refresh.
+  // A query must not call Date.now() itself.
+  args: { now: v.number() },
+  handler: async (ctx, { now }): Promise<Earnings | null> => {
+    const user = await getCurrentUser(ctx);
+    if (!user) return null;
+    const host = await ctx.db
+      .query("hosts")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .unique();
+    if (!host) return null;
 
-/** A host is paid once her due earnings add up to this much (USDT). Smaller amounts roll over. */
+    // No row cap any more:
+    //  - "sent" money comes from the running total on the host (hosts.sentTotalUsdt),
+    //    so it is exact however many payouts she has had.
+    //  - Everything not yet sent (pending / processing / failed) is read in full.
+    //    These sets stay small because the cron pays them out, so reading
+    //    them all is cheap.
+    const unsent = await Promise.all(
+      (["pending", "processing", "failed"] as const).map((status) =>
+        ctx.db
+          .query("hostPayouts")
+          .withIndex("by_host_status", (q) =>
+            q.eq("hostId", host._id).eq("status", status),
+          )
+          .collect(),
+      ),
+    );
 
-//Production value change it back after testing
-// const MIN_PAYOUT_USDT = 10;
+    let released = 0;
+    let held = 0;
+    let problem = 0;
+    let nextReleaseAt: number | null = null;
+    for (const r of unsent[0]) {
+      // pending
+      if (r.releaseAt > now) {
+        held += r.amountUsdt;
+        if (nextReleaseAt === null || r.releaseAt < nextReleaseAt) {
+          nextReleaseAt = r.releaseAt;
+        }
+      } else {
+        released += r.amountUsdt;
+      }
+    }
+    for (const r of unsent[1]) released += r.amountUsdt; // processing
+    for (const r of unsent[2]) problem += r.amountUsdt; // failed
 
-// Testing value
-const MIN_PAYOUT_USDT = 0.5;
+    const sent = host.sentTotalUsdt ?? 0;
+    const lifetime = sent + released + held + problem;
 
-const MAX_ROWS_PER_BATCH = 100;
+    // Newest rows for the list (cancelled ones hidden). Only these are read.
+    const newest = await ctx.db
+      .query("hostPayouts")
+      .withIndex("by_host", (q) => q.eq("hostId", host._id))
+      .order("desc")
+      .filter((q) => q.neq(q.field("status"), "cancelled"))
+      .take(RECENT_LIMIT);
+    const recent: EarningsRow[] = newest.map((r) => ({
+      id: r._id,
+      amountUsdt: r.amountUsdt,
+      status: r.status,
+      releaseAt: r.releaseAt,
+      sentAt: r.sentAt ?? null,
+      txUrl: r.txUrl ?? null,
+    }));
 
-// Shortens a wallet address for logs: TXPtLQ...DB2q
-const maskAddress = (a: string) =>
-  a.length > 12 ? `${a.slice(0, 6)}...${a.slice(-4)}` : a;
+    return {
+      minPayoutUsdt: getMinPayoutUsdt(),
+      hasWallet: !!host.payoutAccountRef,
+      releasedUsdt: round2(released),
+      heldUsdt: round2(held),
+      sentUsdt: round2(sent),
+      problemUsdt: round2(problem),
+      lifetimeUsdt: round2(lifetime),
+      nextReleaseAt,
+      recent,
+    };
+  },
+});
 
-export const listDueHosts = internalQuery({
+/** The payout threshold, for pages that mention it (e.g. host onboarding). */
+export const minPayout = query({
+  args: {},
+  handler: async (): Promise<{ minPayoutUsdt: number }> => ({
+    minPayoutUsdt: getMinPayoutUsdt(),
+  }),
+});
+
+/**
+ * ONE-TIME. Run from the Convex dashboard (Functions -> payoutQueue:backfillSentTotals)
+ * right after deploying. It recomputes every host's sentTotalUsdt from her
+ * "sent" rows, so it is safe to run more than once.
+ */
+export const backfillSentTotals = internalMutation({
+  args: {},
+  handler: async (ctx): Promise<number> => {
+    const hosts = await ctx.db.query("hosts").collect();
+    for (const h of hosts) {
+      const sent = await ctx.db
+        .query("hostPayouts")
+        .withIndex("by_host_status", (q) =>
+          q.eq("hostId", h._id).eq("status", "sent"),
+        )
+        .collect();
+      await ctx.db.patch(h._id, {
+        sentTotalUsdt: round2(sent.reduce((sum, r) => sum + r.amountUsdt, 0)),
+      });
+    }
+    return hosts.length;
+  },
+});
+
+// ───────────────────────── Payout cron ─────────────────────────
+/** Hosts that have at least one released, unpaid row. */
+export const hostsWithDue = internalQuery({
   args: { now: v.number() },
   handler: async (ctx, { now }): Promise<Id<"hosts">[]> => {
-    const rows = await ctx.db
+    const due = await ctx.db
       .query("hostPayouts")
       .withIndex("by_status_release", (q) =>
         q.eq("status", "pending").lte("releaseAt", now),
       )
       .take(500);
-    const hostIds = [...new Set(rows.map((r) => r.hostId))];
-    console.log("[payout] listDueHosts", {
-      now,
-      dueRows: rows.length,
-      hosts: hostIds.length,
-    });
-    return hostIds;
+    return Array.from(new Set(due.map((r) => r.hostId))).slice(
+      0,
+      MAX_HOSTS_PER_RUN,
+    );
   },
 });
-
-// Atomic: checks every due row is still owed, locks them as "processing",
-// and returns what to send. Returns null when there is nothing to send yet.
+export type ClaimedPayout = {
+  batchId: string;
+  address: string;
+  amountUsdt: number;
+  payoutIds: Id<"hostPayouts">[];
+};
+/**
+ * Adds up a host's released rows. If she has a wallet, is not suspended and
+ * has reached the minimum, marks those rows "processing" and returns what to
+ * send. It is a mutation, so two overlapping cron runs can never claim the
+ * same rows.
+ */
 export const claimHost = internalMutation({
   args: { hostId: v.id("hosts"), now: v.number() },
-  handler: async (ctx, { hostId, now }) => {
+  handler: async (ctx, { hostId, now }): Promise<ClaimedPayout | null> => {
     const host = await ctx.db.get(hostId);
-    if (!host) {
-      console.log("[payout] claimHost skip: host not found", { hostId });
+    if (!host || host.status === "suspended" || !host.payoutAccountRef) {
       return null;
     }
-    if (host.status !== "approved") {
-      console.log("[payout] claimHost skip: host not approved", {
-        hostId,
-        status: host.status,
-      });
-      return null;
-    }
-    if (!host.payoutAccountRef) {
-      console.log("[payout] claimHost skip: no payoutAccountRef", { hostId });
-      return null;
-    }
-
-    const rows = await ctx.db
+    const pending = await ctx.db
       .query("hostPayouts")
       .withIndex("by_host_status", (q) =>
         q.eq("hostId", hostId).eq("status", "pending"),
       )
-      .take(MAX_ROWS_PER_BATCH);
-    console.log("[payout] claimHost pending rows", {
-      hostId,
-      count: rows.length,
-    });
-
-    const valid = [];
-    for (const r of rows) {
-      if (r.releaseAt > now) {
-        console.log("[payout] claimHost row not yet due", {
-          rowId: r._id,
-          releaseAt: r.releaseAt,
-          now,
-        });
-        continue;
-      }
-      const payment = await ctx.db.get(r.paymentId);
-      let owed = !!payment && payment.status === "succeeded";
-      if (payment && owed && payment.kind === "booking") {
-        const bookingId = ctx.db.normalizeId("bookings", payment.refId);
-        const booking = bookingId ? await ctx.db.get(bookingId) : null;
-        owed =
-          !!booking &&
-          (booking.status === "paid" || booking.status === "completed");
-      }
-      if (!owed) {
-        // refunded / cancelled before it was due
-        console.log("[payout] claimHost row cancelled", {
-          rowId: r._id,
-          paymentStatus: payment?.status,
-        });
-        await ctx.db.patch(r._id, {
-          status: "cancelled",
-          error: "Booking cancelled or refunded before payout",
-        });
-        continue;
-      }
-      valid.push(r);
-    }
-
-    const total =
-      Math.floor(valid.reduce((s, r) => s + r.amountUsdt, 0) * 100) / 100;
-
-    if (valid.length === 0) {
-      console.log("[payout] claimHost skip: no valid rows", { hostId });
-      return null;
-    }
-    if (total < MIN_PAYOUT_USDT) {
-      console.log("[payout] claimHost skip: below minimum", {
-        hostId,
-        total,
-        MIN_PAYOUT_USDT,
-      });
-      return null;
-    }
-
-    const batchId = `batch_${Date.now()}`;
-    for (const r of valid) {
+      .take(500);
+    const due = pending
+      .filter((r) => r.releaseAt <= now)
+      .slice(0, MAX_ROWS_PER_PAYOUT);
+    const amountUsdt = round2(due.reduce((sum, r) => sum + r.amountUsdt, 0));
+    if (due.length === 0 || amountUsdt < getMinPayoutUsdt()) return null;
+    const batchId = `pay_${hostId}_${now}`;
+    for (const r of due) {
       await ctx.db.patch(r._id, { status: "processing", batchId });
     }
-    console.log("[payout] claimHost claimed", {
-      hostId,
-      batchId,
-      total,
-      rows: valid.length,
-    });
     return {
       batchId,
       address: host.payoutAccountRef,
-      total,
-      ids: valid.map((r) => r._id),
+      amountUsdt,
+      payoutIds: due.map((r) => r._id),
     };
   },
 });
-
-export const finishBatch = internalMutation({
+export const markSent = internalMutation({
   args: {
-    ids: v.array(v.id("hostPayouts")),
-    ok: v.boolean(),
-    plisioOpId: v.optional(v.string()),
+    payoutIds: v.array(v.id("hostPayouts")),
+    plisioOpId: v.string(),
     txUrl: v.optional(v.string()),
-    error: v.optional(v.string()),
+    sentAt: v.number(),
   },
-  handler: async (ctx, a) => {
-    for (const id of a.ids) {
-      if (a.ok) {
-        await ctx.db.patch(id, {
-          status: "sent",
-          sentAt: Date.now(),
-          plisioOpId: a.plisioOpId,
-          txUrl: a.txUrl,
+  handler: async (
+    ctx,
+    { payoutIds, plisioOpId, txUrl, sentAt },
+  ): Promise<void> => {
+    let hostId: Id<"hosts"> | null = null;
+    let newlySent = 0;
+    for (const id of payoutIds) {
+      const row = await ctx.db.get(id);
+      if (!row) continue;
+      hostId = row.hostId;
+      // Only count a row the first time it becomes "sent".
+      if (row.status !== "sent") newlySent += row.amountUsdt;
+      await ctx.db.patch(id, {
+        status: "sent",
+        plisioOpId,
+        txUrl,
+        sentAt,
+        error: undefined,
+      });
+    }
+    // Keep the host's running "paid so far" total in step (one claim = one host).
+    if (hostId && newlySent > 0) {
+      const host = await ctx.db.get(hostId);
+      if (host) {
+        await ctx.db.patch(hostId, {
+          sentTotalUsdt: round2((host.sentTotalUsdt ?? 0) + newlySent),
         });
-      } else {
-        await ctx.db.patch(id, { status: "failed", error: a.error });
       }
     }
-    console.log("[payout] finishBatch", {
-      rows: a.ids.length,
-      ok: a.ok,
-      plisioOpId: a.plisioOpId,
-      error: a.error,
-    });
   },
 });
 
+export const markFailed = internalMutation({
+  args: {
+    payoutIds: v.array(v.id("hostPayouts")),
+    error: v.string(),
+  },
+  handler: async (ctx, { payoutIds, error }): Promise<void> => {
+    for (const id of payoutIds) {
+      await ctx.db.patch(id, { status: "failed", error });
+    }
+  },
+});
+/** Cron entry point (convex/crons.ts, every 15 minutes). */
 export const processDue = internalAction({
   args: {},
   handler: async (ctx): Promise<void> => {
-    console.log("[payout] processDue start");
+    const now = Date.now();
     const hostIds: Id<"hosts">[] = await ctx.runQuery(
-      internal.payoutQueue.listDueHosts,
-      { now: Date.now() },
+      internal.payoutQueue.hostsWithDue,
+      { now },
     );
+    // One host at a time: one failure never blocks the others.
     for (const hostId of hostIds) {
-      const claim = await ctx.runMutation(internal.payoutQueue.claimHost, {
-        hostId,
-        now: Date.now(),
-      });
+      const claim: ClaimedPayout | null = await ctx.runMutation(
+        internal.payoutQueue.claimHost,
+        { hostId, now },
+      );
       if (!claim) continue;
-
-      console.log("[payout] sending", {
-        batchId: claim.batchId,
-        address: maskAddress(claim.address),
-        total: claim.total,
-      });
       try {
-        const res = await withdraw(claim.address, claim.total);
-        console.log("[payout] plisio success", {
-          batchId: claim.batchId,
-          opId: res.id,
-          txUrl: res.txUrl,
-        });
-        await ctx.runMutation(internal.payoutQueue.finishBatch, {
-          ids: claim.ids,
-          ok: true,
-          plisioOpId: res.id,
-          txUrl: res.txUrl,
+        const result = await withdraw(claim.address, claim.amountUsdt);
+        await ctx.runMutation(internal.payoutQueue.markSent, {
+          payoutIds: claim.payoutIds,
+          plisioOpId: result.id,
+          txUrl: result.txUrl,
+          sentAt: Date.now(),
         });
       } catch (e) {
-        // A failed batch is NEVER retried automatically: if the network dropped after
-        // Plisio sent the money, retrying would pay her twice. Check Plisio →
-        // Transactions first, then run payoutQueue:retryFailed from the dashboard.
-        const message = e instanceof Error ? e.message : String(e);
-        console.error("[payout] plisio FAILED", {
-          batchId: claim.batchId,
-          error: message,
-        });
-        await ctx.runMutation(internal.payoutQueue.finishBatch, {
-          ids: claim.ids,
-          ok: false,
+        const message = errorMessage(e);
+        console.error(`[payout] ${claim.batchId} failed: ${message}`);
+        await ctx.runMutation(internal.payoutQueue.markFailed, {
+          payoutIds: claim.payoutIds,
           error: message,
         });
       }
     }
-    console.log("[payout] processDue done", { hostsProcessed: hostIds.length });
   },
 });
-
-// Run from the Convex dashboard after you have checked Plisio and fixed the cause
-// (for example topped up the USDT balance). Puts failed rows back in the queue.
-export const retryFailed = internalMutation({
+/**
+ * Manual: put every failed row back in the queue. Run it from the Convex
+ * dashboard AFTER checking Plisio that the money did not actually leave.
+ */
+export const requeueFailed = internalMutation({
   args: {},
   handler: async (ctx): Promise<number> => {
-    const rows = await ctx.db
+    const failed = await ctx.db
       .query("hostPayouts")
       .withIndex("by_status_release", (q) => q.eq("status", "failed"))
-      .collect();
-    for (const r of rows) {
-      await ctx.db.patch(r._id, {
-        status: "pending",
-        error: undefined,
-        batchId: undefined,
-      });
+      .take(500);
+    for (const r of failed) {
+      await ctx.db.patch(r._id, { status: "pending", error: undefined });
     }
-    console.log("[payout] retryFailed requeued", { rows: rows.length });
-    return rows.length;
-  },
-});
-
-// For the host dashboard: what is waiting and what was sent.
-export const myPayouts = query({
-  args: {},
-  handler: async (ctx) => {
-    const user = await requireCurrentUser(ctx);
-    const host = await ctx.db
-      .query("hosts")
-      .withIndex("by_user", (q) => q.eq("userId", user._id))
-      .unique();
-    if (!host) return { waitingUsdt: 0, sentUsdt: 0, recent: [] };
-
-    const rows = await ctx.db
-      .query("hostPayouts")
-      .withIndex("by_host", (q) => q.eq("hostId", host._id))
-      .order("desc")
-      .take(100);
-
-    const sum = (pred: (s: string) => boolean) =>
-      Math.round(
-        rows
-          .filter((r) => pred(r.status))
-          .reduce((s, r) => s + r.amountUsdt, 0) * 100,
-      ) / 100;
-
-    return {
-      waitingUsdt: sum(
-        (s) => s === "pending" || s === "processing" || s === "failed",
-      ),
-      sentUsdt: sum((s) => s === "sent"),
-      recent: rows.slice(0, 20).map((r) => ({
-        amountUsdt: r.amountUsdt,
-        status: r.status,
-        releaseAt: r.releaseAt,
-        sentAt: r.sentAt ?? null,
-        txUrl: r.txUrl ?? null,
-      })),
-    };
+    return failed.length;
   },
 });

@@ -17,7 +17,14 @@ const PUBLIC: string[] = ["/sign-in", "/sign-up", "/privacy", "/terms"];
 function allowedFor(u: AccountUser): string[] {
   if (u.role === "admin") return ["/admin", "/settings"];
   if (u.role === "host")
-    return ["/host", "/bookings", "/call", "/gifts", "/settings"];
+    return [
+      "/host",
+      "/girl-help", // Help tab: wallet setup guide
+      "/bookings",
+      "/call",
+      "/gifts",
+      "/settings",
+    ];
   if (u.onboardingChoice === "client") {
     return [
       "/hosts",
@@ -26,13 +33,15 @@ function allowedFor(u: AccountUser): string[] {
       "/call",
       "/tokens",
       "/gifts",
+      "/directions", // how to buy USDT and pay for a booking
       "/settings",
       "/verify-age",
       "/choose-role",
     ];
   }
   if (u.onboardingChoice === "girl") {
-    return ["/become-a-host", "/choose-role", "/settings"];
+    // /girl-help so an applicant can get her wallet ready while she waits
+    return ["/become-a-host", "/girl-help", "/choose-role", "/settings"];
   }
   return ["/choose-role"]; // hasn't chosen yet
 }

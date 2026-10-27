@@ -5,7 +5,6 @@ import { api } from "@/convex/_generated/api";
 import { ProfileForm } from "@/app/components/ProfileForm";
 import { Loader2 } from "lucide-react";
 
-
 export default function OnboardingPage(): React.JSX.Element {
   const existingProfile = useQuery(api.profiles.getMyProfile);
 

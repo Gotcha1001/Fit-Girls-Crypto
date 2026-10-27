@@ -18,6 +18,7 @@ type Row = {
   endsAt: number;
   minutes: number;
   status: string;
+  attendance?: string | null; // "host_no_show" | "guest_no_show" | null
   otherName: string;
   hostTimezone: string | null;
   guestTimezone: string | null;
@@ -31,6 +32,7 @@ const STATUS_LABEL: Record<string, string> = {
   paid: "Paid",
   completed: "Completed",
   refunded: "Refunded",
+  cancelled: "Cancelled",
 };
 
 // Status pills keep their own colours (yellow / green / grey) because they
@@ -42,7 +44,38 @@ const STATUS_STYLE: Record<string, string> = {
   paid: "bg-green-500/10 text-green-300",
   completed: "bg-neutral-500/20 text-neutral-300",
   refunded: "bg-neutral-500/20 text-neutral-300",
+  cancelled: "bg-neutral-500/20 text-neutral-300",
 };
+
+// Label + colour for a booking, including the two no-show outcomes.
+function statusFor(row: Row, side: "guest" | "host") {
+  if (row.status === "cancelled" && row.attendance === "host_no_show") {
+    return side === "guest"
+      ? {
+          label: "Host missed it · credit added to Wallet",
+          style: "bg-amber-500/10 text-amber-300",
+        }
+      : {
+          label: "You missed it · cancelled",
+          style: "bg-red-500/10 text-red-300",
+        };
+  }
+  if (row.status === "paid" && row.attendance === "guest_no_show") {
+    return side === "guest"
+      ? {
+          label: "You didn't join",
+          style: "bg-neutral-500/20 text-neutral-300",
+        }
+      : {
+          label: "Client didn't join · you're still paid",
+          style: "bg-green-500/10 text-green-300",
+        };
+  }
+  return {
+    label: STATUS_LABEL[row.status] ?? row.status,
+    style: STATUS_STYLE[row.status] ?? "",
+  };
+}
 
 // Clock lives in state (not read during render) and refreshes every 30s,
 // so a booking drops off the list / loses its Join button while the page is open.
@@ -77,6 +110,8 @@ function BookingRow({
   // Only joinable while the booking window hasn't ended.
   const canJoin =
     row.status === "paid" && Boolean(row.callSessionId) && row.endsAt > now;
+
+  const st = statusFor(row, side);
 
   return (
     <li
@@ -116,11 +151,9 @@ function BookingRow({
         </p>
 
         <span
-          className={`mt-1 inline-block rounded-full px-2 py-0.5 text-xs ${
-            STATUS_STYLE[row.status] ?? ""
-          }`}
+          className={`mt-1 inline-block rounded-full px-2 py-0.5 text-xs ${st.style}`}
         >
-          {STATUS_LABEL[row.status] ?? row.status}
+          {st.label}
         </span>
       </div>
 
@@ -167,7 +200,8 @@ function Section({
     )
     .sort((a, b) => a.startsAt - b.startsAt);
 
-  // Past = finished / refunded / expired. Hidden by default (latest first).
+  // Past = finished / refunded / expired / host no-show. Hidden by default
+  // (latest first).
   const past = rows
     .filter((r) => !upcoming.includes(r))
     .sort((a, b) => b.startsAt - a.startsAt);

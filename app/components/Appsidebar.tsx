@@ -26,6 +26,8 @@ import {
   KeyRound,
   UserCog,
   Wallet,
+  CircleHelp,
+  Compass,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -47,6 +49,7 @@ const CLIENT_NAV: NavItem[] = [
   { href: "/tokens", label: "Tokens", icon: Coins },
   { href: "/gifts", label: "Gifts", icon: Gift },
   { href: "/wallet", label: "Wallet", icon: Wallet },
+  { href: "/directions", label: "Directions", icon: Compass }, // how to buy USDT and pay
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
@@ -55,7 +58,9 @@ const HOST_NAV: NavItem[] = [
   { href: "/host/schedule", label: "My Schedule", icon: CalendarDays },
   { href: "/host/photos", label: "Secret Photos", icon: Lock }, // NEW: upload + prices
   { href: "/bookings", label: "My Bookings", icon: CalendarCheck },
+  { href: "/host/earnings", label: "Earnings", icon: Wallet },
   { href: "/gifts", label: "My Gifts", icon: Gift },
+  { href: "/girl-help", label: "Help", icon: CircleHelp },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
@@ -66,6 +71,7 @@ const ADMIN_NAV: NavItem[] = [
 
 const GIRL_APPLICANT_NAV: NavItem[] = [
   { href: "/become-a-host", label: "Host Access", icon: KeyRound },
+  { href: "/girl-help", label: "Help", icon: CircleHelp },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
