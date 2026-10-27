@@ -1,4 +1,6 @@
 // convex/wallet.ts  (REPLACE whole file)
+// Only change from your version: explicit return types, which stop TypeScript
+// "implicitly has type any" loops (noShow -> wallet -> fulfilBooking -> api).
 import { mutation, query, MutationCtx, QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
@@ -9,7 +11,8 @@ import { fulfilPaidBooking } from "./lib/fulfilBooking";
 /**
  * Wallet = append-only ledger (walletTransactions), separate from the
  * existing users.tokens / profiles.coins dating currencies.
- * Balance = credits - debits. Single currency (CHARGE_CURRENCY = ZAR).
+ * Balance = credits - debits, kept in CHARGE_CURRENCY (ZAR) cents.
+ * The UI shows it in the client's own currency (useMoney).
  */
 const WALLET_PAYMENTS_ENABLED = true;
 
@@ -22,7 +25,7 @@ async function currentUser(ctx: QueryCtx) {
     .unique();
 }
 
-async function balanceFor(ctx: QueryCtx, userId: Id<"users">) {
+async function balanceFor(ctx: QueryCtx, userId: Id<"users">): Promise<number> {
   const rows = await ctx.db
     .query("walletTransactions")
     .withIndex("by_user", (q) => q.eq("userId", userId))
@@ -46,7 +49,7 @@ export async function creditWallet(
     currency: string;
     reason: "host_no_show";
   },
-) {
+): Promise<Id<"walletTransactions">> {
   const existing = await ctx.db
     .query("walletTransactions")
     .withIndex("by_booking_reason", (q) =>
@@ -54,6 +57,7 @@ export async function creditWallet(
     )
     .first();
   if (existing) return existing._id;
+
   return await ctx.db.insert("walletTransactions", {
     userId: args.userId,
     bookingId: args.bookingId,
@@ -67,7 +71,7 @@ export async function creditWallet(
 
 export const getBalance = query({
   args: {},
-  handler: async (ctx) => {
+  handler: async (ctx): Promise<number> => {
     const user = await currentUser(ctx);
     if (!user) return 0;
     return await balanceFor(ctx, user._id);
@@ -93,6 +97,15 @@ export const getTransactions = query({
   },
 });
 
+type SpendResult =
+  | { ok: true }
+  | {
+      ok: false;
+      reason: "insufficient";
+      balanceCents: number;
+      neededCents: number;
+    };
+
 /**
  * Pay for a NEW booking with wallet credit. Credit must cover the full price
  * (no part-payments yet).
@@ -102,7 +115,7 @@ export const getTransactions = query({
  */
 export const spendOnBooking = mutation({
   args: { bookingId: v.id("bookings") },
-  handler: async (ctx, { bookingId }) => {
+  handler: async (ctx, { bookingId }): Promise<SpendResult> => {
     if (!WALLET_PAYMENTS_ENABLED) {
       throw new Error("Wallet payments are not enabled yet");
     }
@@ -120,7 +133,7 @@ export const spendOnBooking = mutation({
         q.eq("bookingId", bookingId).eq("reason", "booking_payment"),
       )
       .first();
-    if (already) return { ok: true as const };
+    if (already) return { ok: true };
 
     if (booking.status !== "pending_payment") {
       throw new Error("Booking is not awaiting payment");
@@ -128,6 +141,7 @@ export const spendOnBooking = mutation({
     if (booking.startsAt <= Date.now()) {
       throw new Error("That time has already started. Pick another slot.");
     }
+
     const host = await ctx.db.get(booking.hostId);
     if (!host || host.status !== "approved" || !host.payoutAccountRef) {
       throw new Error("Host unavailable");
@@ -136,8 +150,8 @@ export const spendOnBooking = mutation({
     const balance = await balanceFor(ctx, user._id);
     if (balance < booking.amountCents) {
       return {
-        ok: false as const,
-        reason: "insufficient" as const,
+        ok: false,
+        reason: "insufficient",
         balanceCents: balance,
         neededCents: booking.amountCents,
       };
@@ -181,6 +195,6 @@ export const spendOnBooking = mutation({
     // 3. paid + call room + host payout + no-show check (same code as card/crypto)
     await fulfilPaidBooking(ctx, { booking, paymentId, hostShareUsdt });
 
-    return { ok: true as const };
+    return { ok: true };
   },
 });

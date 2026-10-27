@@ -17,13 +17,12 @@ import {
   toMinor,
 } from "@/convex/lib/currency";
 import { isValidTronAddress } from "@/convex/lib/tronAddress";
+import { WalletSetupGuide } from "@/app/components/host/WalletSetupGuide";
 
 // Rate limits are defined in rand and converted to her currency (same numbers
 // as convex/hosts.ts).
 const MIN_RATE_BASE = 500; // R5 per minute
 const MAX_RATE_BASE = 10000; // R100 per minute
-
-
 
 const MAX_AVATAR_BYTES = 5 * 1024 * 1024;
 
@@ -59,17 +58,13 @@ export default function HostOnboarding() {
 
   const setupPayout = useAction(api.hostPayout.setupPayout);
 
-
   const [displayName, setDisplayName] = useState("");
   const [bio, setBio] = useState("");
   const [rateRand, setRateRand] = useState(""); // typed in HER currency
   const [over18, setOver18] = useState(false);
 
-
-const [wallet, setWallet] = useState("");
-const [walletConfirm, setWalletConfirm] = useState("");
-
-
+  const [wallet, setWallet] = useState("");
+  const [walletConfirm, setWalletConfirm] = useState("");
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -103,7 +98,6 @@ const [walletConfirm, setWalletConfirm] = useState("");
   }, [host?._id, host === null, app?.fullName, me?.country, !!fx]);
 
   // Load banks once a profile exists
-
 
   if (host === undefined) return <p className="p-8">Loading…</p>;
 
@@ -168,32 +162,33 @@ const [walletConfirm, setWalletConfirm] = useState("");
     }
   }
 
-async function onSavePayout(e: React.FormEvent) {
-  e.preventDefault();
-  setError("");
-  setDone("");
-  const a = wallet.trim();
-  if (a !== walletConfirm.trim()) {
-    setError("The two wallet addresses don't match.");
-    return;
+  async function onSavePayout(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    setDone("");
+    const a = wallet.trim();
+    if (a !== walletConfirm.trim()) {
+      setError("The two wallet addresses don't match.");
+      return;
+    }
+    if (!(await isValidTronAddress(a))) {
+      setError(
+        "That is not a valid TRON (TRC-20) address. It starts with a T.",
+      );
+      return;
+    }
+    setBusy(true);
+    try {
+      await setupPayout({ walletAddress: a });
+      setWallet("");
+      setWalletConfirm("");
+      setDone("Payouts are set up.");
+    } catch (err: unknown) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
   }
-  if (!(await isValidTronAddress(a))) {
-    setError("That is not a valid TRON (TRC-20) address. It starts with a T.");
-    return;
-  }
-  setBusy(true);
-  try {
-    await setupPayout({ walletAddress: a });
-    setWallet("");
-    setWalletConfirm("");
-    setDone("Payouts are set up.");
-  } catch (err: unknown) {
-    setError(errorMessage(err));
-  } finally {
-    setBusy(false);
-  }
-}
-
 
   function statusBanner(): {
     text: string;
@@ -234,13 +229,12 @@ async function onSavePayout(e: React.FormEvent) {
         <h1 className="text-2xl font-semibold">
           {host ? "Your host profile" : "Set up your host profile"}
         </h1>
-<p className="mt-2 text-neutral-400">
-  You keep 80% of every booking and unlock, minus payment processing fees.
-  The platform takes 20%. Your earnings are paid automatically in USDT
-  (TRON / TRC-20) to your wallet, about 24 hours after each call, once you
-  have $10 or more waiting.
-</p>
-
+        <p className="mt-2 text-neutral-400">
+          You keep 80% of every booking and unlock, minus payment processing
+          fees. The platform takes 20%. Your earnings are paid automatically in
+          USDT (TRON / TRC-20) to your wallet, about 24 hours after each call,
+          once you have $10 or more waiting.
+        </p>
       </header>
 
       {banner && (
@@ -381,54 +375,61 @@ async function onSavePayout(e: React.FormEvent) {
         </div>
       </section>
 
-  {host && (
-  <section className={card}>
-    <h2 className="text-lg font-semibold">Where we pay you</h2>
-    {host.payoutReady ? (
-      <p className="rounded-lg border border-rose-500/40 bg-rose-600/10 p-3">
-        Payouts are sent automatically in USDT (TRC-20) to the wallet ending in{" "}
-        <strong>{host.bankLast4}</strong>. To change it, contact support.
-      </p>
-    ) : (
-      <form onSubmit={onSavePayout} className="space-y-4">
-        <p className="text-sm text-neutral-400">
-          Paste a <strong>USDT wallet address on the TRON (TRC-20) network</strong>.
-          It starts with a T. Sending to the wrong network or a wrong address
-          cannot be undone, so check it with your wallet or exchange first.
-        </p>
-        <label className="block">
-          <span className="mb-1 block text-sm font-medium">
-            USDT wallet address (TRC-20)
-          </span>
-          <input
-            className={field}
-            value={wallet}
-            onChange={(e) => setWallet(e.target.value)}
-            autoComplete="off"
-            spellCheck={false}
-            placeholder="T…"
-            required
-          />
-        </label>
-        <label className="block">
-          <span className="mb-1 block text-sm font-medium">Confirm address</span>
-          <input
-            className={field}
-            value={walletConfirm}
-            onChange={(e) => setWalletConfirm(e.target.value)}
-            autoComplete="off"
-            spellCheck={false}
-            required
-          />
-        </label>
-        <button className={button} disabled={busy}>
-          Save wallet
-        </button>
-      </form>
-    )}
-  </section>
-)}
-
+      {host && (
+        <section className={card}>
+          <h2 className="text-lg font-semibold">Where we pay you</h2>
+          {host.payoutReady ? (
+            <p className="rounded-lg border border-rose-500/40 bg-rose-600/10 p-3">
+              Payouts are sent automatically in USDT (TRC-20) to the wallet
+              ending in <strong>{host.bankLast4}</strong>. To change it, contact
+              support.
+            </p>
+          ) : (
+            <form onSubmit={onSavePayout} className="space-y-4">
+              <p className="text-sm text-neutral-400">
+                Paste a{" "}
+                <strong>
+                  USDT wallet address on the TRON (TRC-20) network
+                </strong>
+                . It starts with a T. Sending to the wrong network or a wrong
+                address cannot be undone, so check it with your wallet or
+                exchange first.
+              </p>
+              <WalletSetupGuide compact />
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium">
+                  USDT wallet address (TRC-20)
+                </span>
+                <input
+                  className={field}
+                  value={wallet}
+                  onChange={(e) => setWallet(e.target.value)}
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder="T…"
+                  required
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium">
+                  Confirm address
+                </span>
+                <input
+                  className={field}
+                  value={walletConfirm}
+                  onChange={(e) => setWalletConfirm(e.target.value)}
+                  autoComplete="off"
+                  spellCheck={false}
+                  required
+                />
+              </label>
+              <button className={button} disabled={busy}>
+                Save wallet
+              </button>
+            </form>
+          )}
+        </section>
+      )}
     </main>
   );
 }

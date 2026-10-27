@@ -1,3 +1,6 @@
+// convex/callAccess.ts  (REPLACE whole file)
+// Only change: a clear message when the booking was cancelled because the host
+// didn't join (a late host used to just see "This booking is not paid").
 import { query } from "./_generated/server";
 import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
@@ -33,6 +36,7 @@ export const getJoinInfo = query({
     if (!isRequester && !isRecipient) {
       return { ok: false, reason: "Not your call" };
     }
+
     // Only accepted calls can be joined. Give a specific reason for the rest.
     if (session.status !== "accepted") {
       const reason =
@@ -48,6 +52,20 @@ export const getJoinInfo = query({
     if (session.bookingId) {
       const booking = await ctx.db.get(session.bookingId);
       if (!booking) return { ok: false, reason: "Booking not found" };
+
+      // NEW: the no-show check cancelled this booking
+      if (
+        booking.status === "cancelled" &&
+        booking.attendance === "host_no_show"
+      ) {
+        return {
+          ok: false,
+          reason:
+            booking.guestId === user._id
+              ? "The host didn't join in time. Your payment was added to your Wallet as credit."
+              : "This call was cancelled because you didn't join within 5 minutes of the start time.",
+        };
+      }
       if (booking.status !== "paid") {
         return { ok: false, reason: "This booking is not paid" };
       }
@@ -70,7 +88,6 @@ export const getJoinInfo = query({
       if (now > endsAt + LATE_GRACE_MS) {
         return { ok: false, reason: "This booking window has passed" };
       }
-
       return {
         ok: true,
         roomName: session.roomName,

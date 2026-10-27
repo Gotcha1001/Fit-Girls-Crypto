@@ -3,7 +3,7 @@ import { mutation, internalMutation, MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Doc, Id } from "./_generated/dataModel";
-import { GRACE_MS } from "./noShowConfig";
+import { GRACE_MS } from "./lib/noShowGrace"; // was ./noShowConfig (import loop)
 import { creditWallet } from "./wallet";
 import { CHARGE_CURRENCY } from "./lib/currency";
 
@@ -22,7 +22,6 @@ function assertSecret(secret: string) {
   if (!expected || secret !== expected) throw new Error("Unauthorized");
 }
 
-/** Find the paid booking behind a LiveKit room name. */
 async function findBookingByRoom(
   ctx: MutationCtx,
   roomName: string,
@@ -54,6 +53,8 @@ async function roleOf(
   return null;
 }
 
+type RecordJoinResult = { ignored: string } | { recorded: "host" | "guest" };
+
 /**
  * Called by the Next.js LiveKit webhook route after it verified LiveKit's
  * signature. Public (ConvexHttpClient can't call internal functions), so it is
@@ -66,7 +67,10 @@ export const recordJoin = mutation({
     identity: v.string(),
     joinedAt: v.number(), // ms
   },
-  handler: async (ctx, { secret, roomName, identity, joinedAt }) => {
+  handler: async (
+    ctx,
+    { secret, roomName, identity, joinedAt },
+  ): Promise<RecordJoinResult> => {
     assertSecret(secret);
     const booking = await findBookingByRoom(ctx, roomName);
     if (!booking) return { ignored: "not a booking room" }; // e.g. dating calls
@@ -97,7 +101,7 @@ export const recordJoin = mutation({
  */
 export const evaluate = internalMutation({
   args: { bookingId: v.id("bookings") },
-  handler: async (ctx, { bookingId }) => {
+  handler: async (ctx, { bookingId }): Promise<void> => {
     const booking = await ctx.db.get(bookingId);
     if (!booking || booking.status !== "paid") return;
     if (!booking.noShowArmedAt) return; // booking predates this feature
@@ -150,13 +154,13 @@ export const evaluate = internalMutation({
         .withIndex("by_payment", (q) => q.eq("paymentId", paymentId))
         .collect();
       for (const p of payouts) {
-        if (p.status === "pending") {
+        if (p.status === "pending" || p.status === "failed") {
           await ctx.db.patch(p._id, {
             status: "cancelled",
             error: "host no-show",
           });
         } else if (p.status !== "cancelled") {
-          // Already processing/sent/failed: needs a human decision
+          // Already processing/sent: needs a human decision
           console.error(
             `[no-show] payout ${p._id} is "${p.status}" for host no-show booking ${bookingId}`,
           );
@@ -172,10 +176,11 @@ export const evaluate = internalMutation({
  */
 export const sweep = internalMutation({
   args: {},
-  handler: async (ctx) => {
+  handler: async (ctx): Promise<void> => {
     const now = Date.now();
     const cutoff = now - GRACE_MS;
     const windowStart = now - 24 * 60 * 60 * 1000;
+
     const stale = await ctx.db
       .query("bookings")
       .withIndex("by_status_startsAt", (q) =>
@@ -187,6 +192,7 @@ export const sweep = internalMutation({
       .filter((q) => q.neq(q.field("noShowArmedAt"), undefined))
       .filter((q) => q.eq(q.field("noShowCheckedAt"), undefined))
       .take(100);
+
     for (const b of stale) {
       await ctx.scheduler.runAfter(0, internal.noShow.evaluate, {
         bookingId: b._id,

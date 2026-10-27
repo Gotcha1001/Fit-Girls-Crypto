@@ -32,6 +32,8 @@ import type * as lib_fees from "../lib/fees.js";
 import type * as lib_fulfilBooking from "../lib/fulfilBooking.js";
 import type * as lib_fxRates from "../lib/fxRates.js";
 import type * as lib_geo from "../lib/geo.js";
+import type * as lib_noShowGrace from "../lib/noShowGrace.js";
+import type * as lib_payoutConfig from "../lib/payoutConfig.js";
 import type * as lib_plisio from "../lib/plisio.js";
 import type * as lib_schedule from "../lib/schedule.js";
 import type * as lib_secretPhotoOrders from "../lib/secretPhotoOrders.js";
@@ -86,6 +88,8 @@ declare const fullApi: ApiFromModules<{
   "lib/fulfilBooking": typeof lib_fulfilBooking;
   "lib/fxRates": typeof lib_fxRates;
   "lib/geo": typeof lib_geo;
+  "lib/noShowGrace": typeof lib_noShowGrace;
+  "lib/payoutConfig": typeof lib_payoutConfig;
   "lib/plisio": typeof lib_plisio;
   "lib/schedule": typeof lib_schedule;
   "lib/secretPhotoOrders": typeof lib_secretPhotoOrders;

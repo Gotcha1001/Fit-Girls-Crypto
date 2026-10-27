@@ -1,8 +1,13 @@
+// components/booking/BookCallPanel.tsx  (REPLACE whole file)
+// Changes:
+//  1. Wallet amounts show in the client's own currency (no hardcoded ZAR).
+//  2. If credit doesn't cover the price, the booking that was just created is
+//     kept and the client gets a "Pay by card instead" button for THAT booking
+//     (before, they had to re-pick the slot and the unpaid booking sat there).
 "use client";
 
 import { useState } from "react";
 import { useMutation, useAction, useQuery } from "convex/react";
-
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import {
@@ -14,11 +19,11 @@ import {
   formatTimeRange,
   tzLabel,
 } from "@/convex/lib/schedule";
+import { CHARGE_CURRENCY } from "@/convex/lib/currency";
 import { useViewerTz } from "@/hooks/useViewerTz";
 import { useMoney } from "@/hooks/useMoney";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-
 import { GirlCalendar } from "./GirlCalendar";
 import { AgeGateDialog } from "../AgeGateDialog";
 import { useRouter } from "next/navigation";
@@ -45,16 +50,14 @@ export function BookCallPanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ageOpen, setAgeOpen] = useState(false);
+  // Set when wallet credit was too low: the booking exists, card can still pay it.
+  const [unpaidBookingId, setUnpaidBookingId] = useState<Id<"bookings"> | null>(
+    null,
+  );
   const router = useRouter();
 
   const walletBalance = useQuery(api.wallet.getBalance);
   const spendOnBooking = useMutation(api.wallet.spendOnBooking);
-  const zar = (cents: number) =>
-    new Intl.NumberFormat("en-ZA", {
-      style: "currency",
-      currency: "ZAR",
-    }).format(cents / 100);
-
   const ageStatus = useQuery(api.ageVerification.myAgeStatus);
   const createBooking = useMutation(api.bookings.createBooking);
   const initCheckout = useAction(api.payments.initCheckout);
@@ -65,16 +68,22 @@ export function BookCallPanel({
     setMinutes(m);
     setStartsAt(null); // start times change with the length, so drop the old pick
     setError(null);
+    setUnpaidBookingId(null);
   }
 
-  // Creates the booking and sends the client to Paystack.
+  function pickSlot(ts: number | null) {
+    setStartsAt(ts);
+    setUnpaidBookingId(null);
+    setError(null);
+  }
+
+  // Creates the booking and sends the client to the payment page.
   async function book() {
     if (startsAt == null) return;
     setBusy(true);
     setError(null);
     try {
       const bookingId = await createBooking({ hostId, startsAt, minutes });
-      // Ask Paystack for a payment link, then send the client there
       const url = await initCheckout({ bookingId });
       window.location.href = url;
     } catch (e) {
@@ -99,8 +108,9 @@ export function BookCallPanel({
       const bookingId = await createBooking({ hostId, startsAt, minutes });
       const result = await spendOnBooking({ bookingId });
       if (!result.ok) {
+        setUnpaidBookingId(bookingId);
         setError(
-          `Your credit (${zar(result.balanceCents)}) doesn't cover this booking (${zar(result.neededCents)}). You can pay by card instead.`,
+          `Your credit (${show(result.balanceCents, CHARGE_CURRENCY)}) doesn't cover this booking (${show(result.neededCents, CHARGE_CURRENCY)}). You can pay the full price by card instead.`,
         );
         setBusy(false);
         return;
@@ -112,10 +122,29 @@ export function BookCallPanel({
     }
   }
 
+  // Pay the booking we already created (credit was too low) by card/crypto.
+  async function payUnpaidByCard() {
+    if (!unpaidBookingId || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const url = await initCheckout({ bookingId: unpaidBookingId });
+      window.location.href = url;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Something went wrong");
+      setBusy(false);
+    }
+  }
+
   function confirm() {
     if (startsAt == null || busy) return;
     if (!ageStatus?.ageVerified) {
       setAgeOpen(true);
+      return;
+    }
+    // Reuse the booking if credit already failed once for this slot.
+    if (unpaidBookingId) {
+      payUnpaidByCard();
       return;
     }
     book();
@@ -136,8 +165,6 @@ export function BookCallPanel({
           {options.map((m) => {
             const isSelected = minutes === m;
             return (
-              // Plain <button>, not the shadcn Button: its outline variant sets
-              // its own border colour and can fight the themed border.
               <button
                 key={m}
                 type="button"
@@ -163,7 +190,7 @@ export function BookCallPanel({
         hostTz={hostTz}
         minutes={minutes}
         selected={startsAt}
-        onSelectSlot={setStartsAt}
+        onSelectSlot={pickSlot}
       />
 
       {error && <p className="text-sm text-red-400">{error}</p>}
@@ -195,23 +222,31 @@ export function BookCallPanel({
               </p>
             )}
           </div>
+
           <Button
             className="w-full bg-rose-600 text-white hover:bg-rose-500"
             onClick={confirm}
             disabled={busy}
           >
-            {busy ? "Redirecting to payment…" : "Continue to payment"}
+            {busy
+              ? "Please wait…"
+              : unpaidBookingId
+                ? "Pay full price by card"
+                : "Continue to payment"}
           </Button>
-          {walletBalance !== undefined && walletBalance > 0 && (
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={payWithCredit}
-              disabled={busy}
-            >
-              Pay with wallet credit ({zar(walletBalance)})
-            </Button>
-          )}
+
+          {walletBalance !== undefined &&
+            walletBalance > 0 &&
+            !unpaidBookingId && (
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={payWithCredit}
+                disabled={busy}
+              >
+                Pay with wallet credit ({show(walletBalance, CHARGE_CURRENCY)})
+              </Button>
+            )}
         </div>
       )}
 

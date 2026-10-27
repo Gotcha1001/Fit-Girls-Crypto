@@ -269,7 +269,9 @@ const MIN_MS_LIST = 60_000;
 
 // "My Bookings": bookings the caller made as a guest, plus (if she is a host)
 // bookings other people made with her. Cancelled and expired attempts are
-// hidden to avoid clutter from abandoned payments. Never returns emails.
+// hidden to avoid clutter from abandoned payments, EXCEPT bookings cancelled
+// because the host didn't show up: those stay visible so the client can see
+// why their credit appeared in the Wallet. Never returns emails.
 export const listMine = query({
   args: {},
   handler: async (ctx) => {
@@ -284,8 +286,9 @@ export const listMine = query({
       return s?._id ?? null;
     };
 
-    const visible = (status: string) =>
-      status !== "cancelled" && status !== "expired";
+    const visible = (b: { status: string; attendance?: string }) =>
+      (b.status !== "cancelled" && b.status !== "expired") ||
+      b.attendance === "host_no_show";
 
     // ── As guest ──
     const guestRows = await ctx.db
@@ -296,7 +299,7 @@ export const listMine = query({
 
     const asGuest = await Promise.all(
       guestRows
-        .filter((b) => visible(b.status))
+        .filter((b) => visible(b))
         .map(async (b) => {
           const host = await ctx.db.get(b.hostId);
           return {
@@ -305,6 +308,7 @@ export const listMine = query({
             endsAt: b.endsAt ?? b.startsAt + b.minutes * MIN_MS_LIST,
             minutes: b.minutes,
             status: b.status,
+            attendance: b.attendance ?? null,
             amountCents: b.amountCents,
             otherName: host?.displayName ?? "Host",
             hostTimezone: b.hostTimezone ?? host?.timezone ?? null,
@@ -330,7 +334,7 @@ export const listMine = query({
               .order("desc")
               .take(LIST_LIMIT)
           )
-            .filter((b) => visible(b.status))
+            .filter((b) => visible(b))
             .map(async (b) => {
               const guest = await ctx.db.get(b.guestId);
               return {
@@ -339,6 +343,7 @@ export const listMine = query({
                 endsAt: b.endsAt ?? b.startsAt + b.minutes * MIN_MS_LIST,
                 minutes: b.minutes,
                 status: b.status,
+                attendance: b.attendance ?? null,
                 hostShareCents: b.hostShareCents, // what she earns
                 otherName: guest?.name ?? "Guest",
                 hostTimezone: b.hostTimezone ?? myHost.timezone ?? null,
