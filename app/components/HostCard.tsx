@@ -5,6 +5,7 @@ import { formatTime } from "@/convex/lib/schedule";
 import { currencyForCountry } from "@/convex/lib/currency";
 import { useNow } from "@/hooks/useNow";
 import { useMoney } from "@/hooks/useMoney";
+import { RatingBadge } from "@/app/components/RateCallPanel";
 
 type Props = {
   host: {
@@ -16,6 +17,7 @@ type Props = {
     minMinutes: number;
     country?: string | null;
     timezone?: string | null;
+    rating?: { average: number | null; count: number };
   };
 };
 
@@ -54,8 +56,9 @@ export function HostCard({ host }: Props) {
           )}
           <span className="truncate">{host.displayName}</span>
         </h3>
-        <p className="text-sm text-neutral-400">
-          {show(host.ratePerMinuteCents, hostCurrency)}/min
+        <p className="flex items-center justify-between text-sm text-neutral-400">
+          <span>{show(host.ratePerMinuteCents, hostCurrency)}/min</span>
+          <RatingBadge rating={host.rating} />
         </p>
         {host.bio && (
           <p className="mt-2 line-clamp-3 text-sm text-neutral-300">

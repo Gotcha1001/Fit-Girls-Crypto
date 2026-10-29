@@ -185,6 +185,9 @@ export default defineSchema({
     country: v.optional(v.string()),
     timezone: v.optional(v.string()),
     photoBundlePriceCents: v.optional(v.number()),
+    // Running totals of client ratings (1-10), kept in sync by ratings.submit
+    ratingSum: v.optional(v.number()),
+    ratingCount: v.optional(v.number()),
   })
     .index("by_user", ["userId"])
     .index("by_status", ["status"]),
@@ -242,6 +245,17 @@ export default defineSchema({
     .index("by_guest", ["guestId"])
     .index("by_roomName", ["roomName"]) // NEW
     .index("by_status_startsAt", ["status", "startsAt"]), // NEW
+
+  // One score (1-10) per booking, left by the client after the call.
+  ratings: defineTable({
+    bookingId: v.id("bookings"),
+    hostId: v.id("hosts"),
+    guestId: v.id("users"),
+    score: v.number(), // integer 1-10
+    createdAt: v.number(),
+  })
+    .index("by_booking", ["bookingId"])
+    .index("by_host", ["hostId"]),
 
   galleryItems: defineTable({
     hostId: v.id("hosts"),
