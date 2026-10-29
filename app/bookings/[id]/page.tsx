@@ -7,6 +7,7 @@ import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { LEGACY_TZ, MIN_MS } from "@/convex/lib/schedule";
 import { DualTime } from "@/app/components/DualTime";
+import { RateCallPanel } from "@/app/components/RateCallPanel";
 
 // rose-* is remapped to the chosen accent in globals.css, and "accent-card"
 // adds the themed border + glow (glow needs data-glow="on" on <html>).
@@ -80,6 +81,12 @@ export default function BookingPage() {
 
       {booking.status === "completed" && (
         <p className="text-neutral-300">This call is complete.</p>
+      )}
+
+      {/* After the call: the client rates her out of 10 (renders nothing for
+          hosts, or if the call never took place). */}
+      {booking.isGuest && (
+        <RateCallPanel bookingId={booking._id} hostName={booking.hostName} />
       )}
 
       {booking.status === "cancelled" &&

@@ -44,6 +44,13 @@ async function myHost(ctx: QueryCtx): Promise<Doc<"hosts">> {
   return host;
 }
 
+// Average of the client ratings (1-10), or null until she has one.
+function ratingOf(h: Doc<"hosts">): { average: number | null; count: number } {
+  const count = h.ratingCount ?? 0;
+  if (count === 0) return { average: null, count: 0 };
+  return { average: Math.round(((h.ratingSum ?? 0) / count) * 10) / 10, count };
+}
+
 // Safe for the browser: never returns the wallet address
 export const getMyHost = query({
   args: {},
@@ -148,7 +155,7 @@ export const saveProfile = mutation({
       minMinutes: 10,
       status: preApproved ? "approved" : "pending",
       kycStatus: preApproved ? "verified" : "none",
-  payoutProvider: "plisio",
+      payoutProvider: "plisio",
       isOnline: false,
       ...locale,
     });
@@ -178,7 +185,7 @@ export const savePayout = internalMutation({
   },
   handler: async (ctx, { hostId, payoutAccountRef, bankLast4 }) => {
     await ctx.db.patch(hostId, {
-payoutProvider: "plisio",
+      payoutProvider: "plisio",
       payoutAccountRef,
       bankLast4,
     });
@@ -206,6 +213,7 @@ export const listApproved = query({
         minMinutes: h.minMinutes,
         timezone: h.timezone ?? null,
         country: h.country ?? null,
+        rating: ratingOf(h),
       })),
     );
   },
@@ -236,6 +244,7 @@ export const getPublic = query({
       minMinutes: h.minMinutes,
       timezone: h.timezone ?? null,
       country: h.country ?? null,
+      rating: ratingOf(h),
     };
   },
 });
