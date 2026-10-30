@@ -81,7 +81,17 @@ export const getDay = query({
       startsAt: b.startsAt,
       endsAt: bookingEnd(b),
     }));
-    const slots = openStarts({ dayIndex, openHours: hours, busy, minutes, tz });
+    // Neighbouring days, so a call can run across midnight (24h / night shifts).
+    const around = await loadOverrides(ctx, hostId, dayIndex - 1, dayIndex + 1);
+    const slots = openStarts({
+      dayIndex,
+      openHours: hours,
+      prevHours: effectiveHours(weekly, around, dayIndex - 1).hours,
+      nextHours: effectiveHours(weekly, around, dayIndex + 1).hours,
+      busy,
+      minutes,
+      tz,
+    });
 
     const segments = bookings.map((b) => ({
       startsAt: b.startsAt,
@@ -279,6 +289,44 @@ export const setWeeklyHours = mutation({
         weekday,
         hours: cleaned,
       });
+    }
+  },
+});
+
+/** Host: save the same hours for several weekdays at once (e.g. "24 hours, every day"). */
+export const setWeeklyHoursBulk = mutation({
+  args: {
+    weekdays: v.array(v.number()),
+    hours: v.array(v.number()),
+  },
+  handler: async (ctx, { weekdays, hours }) => {
+    const days = [...new Set(weekdays)];
+    if (
+      days.length === 0 ||
+      days.some((d) => !Number.isInteger(d) || d < 0 || d > 6)
+    ) {
+      throw new Error("weekdays must be 0–6");
+    }
+    const cleaned = cleanHours(hours);
+    const { host } = await requireMyHost(ctx);
+    requireHostTz(host);
+
+    for (const weekday of days) {
+      const existing = await ctx.db
+        .query("hostWeeklyHours")
+        .withIndex("by_host_weekday", (q) =>
+          q.eq("hostId", host._id).eq("weekday", weekday),
+        )
+        .unique();
+      if (existing) {
+        await ctx.db.patch(existing._id, { hours: cleaned });
+      } else {
+        await ctx.db.insert("hostWeeklyHours", {
+          hostId: host._id,
+          weekday,
+          hours: cleaned,
+        });
+      }
     }
   },
 });

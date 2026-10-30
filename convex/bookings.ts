@@ -20,7 +20,12 @@ import {
   isValidTimeZone,
   lastBookableDay,
 } from "./lib/schedule";
-import { clashesWithGap, fitsInRuns, isOnGrid, openRuns } from "./lib/slots";
+import {
+  clashesWithGap,
+  fitsInRuns,
+  isOnGrid,
+  openRunsAcrossDays,
+} from "./lib/slots";
 import {
   bookingEnd,
   holdsSlot,
@@ -101,7 +106,18 @@ export const createBooking = mutation({
     const dayIndex = dayIndexOf(startsAt, tz);
     const weekly = await loadWeekly(ctx, hostId);
     const hours = await workingHoursOn(ctx, hostId, weekly, dayIndex);
-    if (!fitsInRuns(startsAt, endsAt, openRuns(dayIndex, [...hours], tz))) {
+    // Neighbouring days join the run, so a call can cross midnight when she
+    // is open on both sides (24-hour days, night shifts).
+    const prevHours = await workingHoursOn(ctx, hostId, weekly, dayIndex - 1);
+    const nextHours = await workingHoursOn(ctx, hostId, weekly, dayIndex + 1);
+    const runs = openRunsAcrossDays(
+      dayIndex,
+      [...prevHours],
+      [...hours],
+      [...nextHours],
+      tz,
+    );
+    if (!fitsInRuns(startsAt, endsAt, runs)) {
       throw new Error("That call doesn't fit inside her working hours");
     }
 
