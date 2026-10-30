@@ -28,6 +28,7 @@ import {
   Wallet,
   CircleHelp,
   Compass,
+  Star,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -59,6 +60,7 @@ const HOST_NAV: NavItem[] = [
   { href: "/host/photos", label: "Secret Photos", icon: Lock }, // NEW: upload + prices
   { href: "/bookings", label: "My Bookings", icon: CalendarCheck },
   { href: "/host/earnings", label: "Earnings", icon: Wallet },
+  { href: "/host/ratings", label: "My Ratings", icon: Star }, // her rating status
   { href: "/gifts", label: "My Gifts", icon: Gift },
   { href: "/host/girl-help", label: "Help", icon: CircleHelp },
   { href: "/settings", label: "Settings", icon: Settings },
@@ -110,6 +112,7 @@ export function AppSidebar(): React.JSX.Element {
   const isClient = role === "user" && me?.onboardingChoice === "client";
   const unseenGifts =
     useQuery(api.gifts.unseenGiftCount, role === "host" ? {} : "skip") ?? 0;
+  const myRating = useQuery(api.ratings.getMine, role === "host" ? {} : "skip");
   const tokenSummary = useQuery(
     api.tokens.getMySummary,
     isClient ? {} : "skip",
@@ -154,6 +157,13 @@ export function AppSidebar(): React.JSX.Element {
                 {href === "/gifts" && role === "host" && unseenGifts > 0 && (
                   <SidebarMenuBadge className="bg-rose-600 text-white">
                     {unseenGifts}
+                  </SidebarMenuBadge>
+                )}
+                {href === "/host/ratings" && role === "host" && myRating && (
+                  <SidebarMenuBadge className="bg-amber-500 text-black">
+                    {myRating.average === null
+                      ? "New"
+                      : `★ ${myRating.average.toFixed(1)}`}
                   </SidebarMenuBadge>
                 )}
                 {href === "/tokens" && tokenSummary && (

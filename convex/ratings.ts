@@ -89,3 +89,57 @@ export const submit = mutation({
     });
   },
 });
+
+export type MyRatingSummary = {
+  average: number | null; // null until she has her first rating
+  count: number;
+  distribution: number[]; // index 0 = how many 10s, ... index 9 = how many 1s
+  recent: { id: string; score: number; createdAt: number }[];
+};
+
+/**
+ * The signed-in girl's own rating status. Clients stay anonymous: only the
+ * score and date are returned, never who gave it.
+ */
+export const getMine = query({
+  args: {},
+  handler: async (ctx): Promise<MyRatingSummary | null> => {
+    const user = await getCurrentUser(ctx);
+    if (!user) return null;
+
+    const host = await ctx.db
+      .query("hosts")
+      .withIndex("by_user", (q) => q.eq("userId", user._id))
+      .first();
+    if (!host) return null;
+
+    const rows = await ctx.db
+      .query("ratings")
+      .withIndex("by_host", (q) => q.eq("hostId", host._id))
+      .order("desc")
+      .take(500);
+
+    // Totals kept on the host row are the source of truth for the average
+    // (same numbers clients see on her card).
+    const count = host.ratingCount ?? 0;
+    const average =
+      count === 0
+        ? null
+        : Math.round(((host.ratingSum ?? 0) / count) * 10) / 10;
+
+    const distribution = Array<number>(10).fill(0);
+    for (const r of rows) {
+      const i = MAX_SCORE - r.score; // 10 -> 0, 1 -> 9
+      if (i >= 0 && i < 10) distribution[i] += 1;
+    }
+
+    return {
+      average,
+      count,
+      distribution,
+      recent: rows
+        .slice(0, 20)
+        .map((r) => ({ id: r._id, score: r.score, createdAt: r.createdAt })),
+    };
+  },
+});

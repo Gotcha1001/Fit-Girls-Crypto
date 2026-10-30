@@ -36,6 +36,11 @@ export default function WalletPage() {
         <p className="mt-1 text-4xl font-semibold tabular-nums">
           {balance === undefined ? "…" : show(balance, CHARGE_CURRENCY)}
         </p>
+        {balance === 0 && (
+          <p className="mt-2 text-sm text-muted-foreground">
+            You don&apos;t have any credit at the moment.
+          </p>
+        )}
         <Link
           href="/hosts"
           className="mt-4 inline-block rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
@@ -51,8 +56,9 @@ export default function WalletPage() {
         )}
         {transactions?.length === 0 && (
           <p className="text-sm text-muted-foreground">
-            No credit yet. If a host doesn&apos;t join within 5 minutes of the
-            start time, your credit appears here automatically.
+            You don&apos;t have any credit at the moment. If a host doesn&apos;t
+            join within 5 minutes of the start time, your credit appears here
+            automatically.
           </p>
         )}
         <ul className="divide-y rounded-lg border">
