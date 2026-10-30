@@ -13,7 +13,9 @@ import {
 import { useZonedClock } from "@/hooks/useZonedClock";
 import { useViewerTz } from "@/hooks/useViewerTz";
 import { HostDayGrid } from "@/app/components/HostDayGrid";
+
 import { cn } from "@/lib/utils";
+import { HourPresets } from "@/app/components/HourPresents";
 
 /**
  * Themed pill button. A plain <button> (not shadcn Button) so the accent
@@ -87,6 +89,15 @@ export default function HostSchedulePage() {
     }
   }
 
+  async function applyHours(hours: number[]) {
+    setError(null);
+    try {
+      await setOverride({ dayIndex, hours });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not save");
+    }
+  }
+
   async function reset() {
     setError(null);
     try {
@@ -142,13 +153,21 @@ export default function HostSchedulePage() {
 
       {error && <p className="text-sm text-red-400">{error}</p>}
 
+      <section className="accent-card space-y-2 rounded-xl border bg-zinc-900/60 p-3">
+        <h2 className="text-sm font-medium text-zinc-200">
+          Hours for this day only
+        </h2>
+        <HourPresets onApply={applyHours} />
+      </section>
+
       <HostDayGrid day={day} onToggleHour={toggleHour} />
 
       <p className="text-xs text-zinc-500">
-        Tap an open or off slot to change it for this day only (saves as an
-        override). Tap a booked call to open that booking in a new tab and join
-        the call. Each booking also shows the client&apos;s local time. Edit
-        your usual weekly hours under Schedule → Weekly hours.
+        Use the buttons above for 24 hours, a night shift or custom hours, or
+        tap an open or off slot to change one hour for this day only (saves as
+        an override). Tap a booked call to open that booking in a new tab and
+        join the call. Each booking also shows the client&apos;s local time.
+        Edit your usual weekly hours under Schedule → Weekly hours.
       </p>
     </div>
   );
