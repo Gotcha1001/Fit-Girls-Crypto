@@ -21,6 +21,7 @@ import { DualClock } from "@/app/components/DualClock";
 import { BookCallPanel } from "@/app/components/booking/BookCallPanel";
 import { SecretPhotosPanel } from "@/app/components/SecretPhotosPanel";
 import { RatingBadge } from "@/app/components/RateCallPanel";
+import { FavoriteButton } from "@/app/components/FavoriteButton";
 
 export default function HostProfilePage() {
   const { id } = useParams<{ id: string }>();
@@ -50,7 +51,10 @@ export default function HostProfilePage() {
           />
         )}
         <div>
-          <h1 className="text-3xl font-bold">{host.displayName}</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-3xl font-bold">{host.displayName}</h1>
+            {isClient && <FavoriteButton hostId={host._id} />}
+          </div>
           <RatingBadge rating={host.rating} className="mt-1" />
           {host.bio && <p className="mt-2 text-neutral-300">{host.bio}</p>}
         </div>

@@ -17,6 +17,7 @@ import type * as calendar from "../calendar.js";
 import type * as callAccess from "../callAccess.js";
 import type * as calls from "../calls.js";
 import type * as crons from "../crons.js";
+import type * as favorites from "../favorites.js";
 import type * as fx from "../fx.js";
 import type * as gallery from "../gallery.js";
 import type * as gifts from "../gifts.js";
@@ -74,6 +75,7 @@ declare const fullApi: ApiFromModules<{
   callAccess: typeof callAccess;
   calls: typeof calls;
   crons: typeof crons;
+  favorites: typeof favorites;
   fx: typeof fx;
   gallery: typeof gallery;
   gifts: typeof gifts;
