@@ -8,6 +8,8 @@
 
 import {
   GAP_MS,
+  dayEndMs,
+  dayStartMs,
   HOUR_MS,
   MIN_MS,
   SLOT_GRID_MS,
@@ -113,6 +115,35 @@ export function fitsInRuns(
 }
 
 /**
+ * Like openRuns, but joins the runs of the day before, the day itself and the
+ * day after. When she is open at the end of one day AND the start of the next
+ * (a 24-hour day, or a night shift such as 21:00-09:00), those hours form ONE
+ * run, so a call may cross midnight. A gap (a closed hour) still breaks a run.
+ */
+export function openRunsAcrossDays(
+  dayIndex: number,
+  prevHours: readonly number[],
+  openHours: readonly number[],
+  nextHours: readonly number[],
+  tz: string,
+): Array<readonly [number, number]> {
+  const runs: Array<[number, number]> = [];
+  const days: Array<[number, readonly number[]]> = [
+    [dayIndex - 1, prevHours],
+    [dayIndex, openHours],
+    [dayIndex + 1, nextHours],
+  ];
+  for (const [d, hrs] of days) {
+    for (const [from, to] of openRuns(d, hrs, tz)) {
+      const last = runs[runs.length - 1];
+      if (last && last[1] === from) last[1] = to;
+      else runs.push([from, to]);
+    }
+  }
+  return runs;
+}
+
+/**
  * Every start time where a call of `minutes` fits that (host-local) day.
  *
  * Two kinds of start are offered:
@@ -134,6 +165,9 @@ export function fitsInRuns(
 export function openStarts(opts: {
   dayIndex: number;
   openHours: readonly number[];
+  /** Hours she is open the day before / after, so calls can cross midnight. */
+  prevHours?: readonly number[];
+  nextHours?: readonly number[];
   busy: readonly Busy[];
   minutes: number;
   tz: string;
@@ -141,13 +175,23 @@ export function openStarts(opts: {
   const { dayIndex, openHours, busy, minutes, tz } = opts;
   const duration = minutes * MIN_MS;
   const sorted = [...busy].sort((a, b) => a.startsAt - b.startsAt);
-  const runs = openRuns(dayIndex, openHours, tz);
+  const runs = openRunsAcrossDays(
+    dayIndex,
+    opts.prevHours ?? [],
+    openHours,
+    opts.nextHours ?? [],
+    tz,
+  );
+  // Only starts that fall on THIS local day are listed; a call may still end
+  // after midnight when the run carries on.
+  const dayFrom = dayStartMs(dayIndex, tz);
+  const dayTo = dayEndMs(dayIndex, tz);
   const out = new Set<number>();
 
   // 1. Tightly packed chain.
   for (const [runStart, runEnd] of runs) {
-    let t = runStart;
-    while (t + duration <= runEnd) {
+    let t = Math.max(runStart, dayFrom);
+    while (t < dayTo && t + duration <= runEnd) {
       const hit = sorted.find(
         (b) => t < b.endsAt + GAP_MS && b.startsAt < t + duration + GAP_MS,
       );
@@ -164,7 +208,11 @@ export function openStarts(opts: {
 
   // 2. Top of every local working hour, if it fits and keeps the gap.
   for (const [runStart, runEnd] of runs) {
-    for (let h = runStart; h + duration <= runEnd; h = nextLocalHour(h, tz)) {
+    for (
+      let h = Math.max(runStart, dayFrom);
+      h < dayTo && h + duration <= runEnd;
+      h = nextLocalHour(h, tz)
+    ) {
       const clash = sorted.some(
         (b) => h < b.endsAt + GAP_MS && b.startsAt < h + duration + GAP_MS,
       );
