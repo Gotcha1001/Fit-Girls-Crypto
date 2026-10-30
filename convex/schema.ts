@@ -135,6 +135,16 @@ export default defineSchema({
     .index("by_recipient", ["toUserId"])
     .index("by_pair", ["fromUserId", "toUserId"]),
 
+  // A client's favourite girls (many per client). Separate from "likes",
+  // which are user-to-user.
+  favorites: defineTable({
+    userId: v.id("users"), // the client who starred her
+    hostId: v.id("hosts"), // the girl
+    createdAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_pair", ["userId", "hostId"]),
+
   tokenPurchases: defineTable({
     userId: v.id("users"),
     packageId: v.string(),

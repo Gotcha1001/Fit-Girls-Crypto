@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "convex/react";
-import { Search, X } from "lucide-react";
+import { Search, Star, X } from "lucide-react";
 
 import { api } from "@/convex/_generated/api";
 import { currencyForCountry, toMinor } from "@/convex/lib/currency";
@@ -29,6 +29,12 @@ const MIN_RATING_OPTIONS = [
   { value: 9, label: "9+ out of 10" },
 ];
 
+type Tab = "all" | "favorites";
+
+function readTab(v: string | null): Tab {
+  return v === "favorites" ? "favorites" : "all";
+}
+
 const COUNTRY_NAME = new Map(COUNTRIES.map((c) => [c.code, c.name]));
 
 const controlClass =
@@ -49,6 +55,7 @@ function readMaxPrice(v: string | null): string {
 
 function HostsList() {
   const hosts = useQuery(api.hosts.listApproved);
+  const favoriteIds = useQuery(api.favorites.getMyFavoriteIds);
   const { toViewer, viewerCurrency, ready } = useMoney();
 
   const router = useRouter();
@@ -65,6 +72,7 @@ function HostsList() {
     readMaxPrice(params.get("maxprice")),
   ); // per minute, in the viewer's currency (whole units, e.g. "2.50")
   const [sort, setSort] = useState<SortKey>(() => readSort(params.get("sort")));
+  const [tab, setTab] = useState<Tab>(() => readTab(params.get("tab")));
 
   // Keep the address bar in step with the filters (no history entry per tweak)
   useEffect(() => {
@@ -74,19 +82,47 @@ function HostsList() {
     if (minRating > 0) qs.set("rating", String(minRating));
     if (maxPrice) qs.set("maxprice", maxPrice);
     if (sort !== "top") qs.set("sort", sort);
+    if (tab === "favorites") qs.set("tab", "favorites");
     const next = qs.toString();
     if (next === params.toString()) return;
     router.replace(next ? `${pathname}?${next}` : pathname, { scroll: false });
-  }, [search, country, minRating, maxPrice, sort, params, pathname, router]);
+  }, [
+    search,
+    country,
+    minRating,
+    maxPrice,
+    sort,
+    tab,
+    params,
+    pathname,
+    router,
+  ]);
+
+  // Only girls who are still bookable can appear (listApproved already drops
+  // anyone suspended), so a stale favourite just doesn't show.
+  const favoriteSet = useMemo(
+    () => new Set<string>(favoriteIds ?? []),
+    [favoriteIds],
+  );
+  const favoriteHosts = useMemo(
+    () => (hosts ?? []).filter((h) => favoriteSet.has(h._id)),
+    [hosts, favoriteSet],
+  );
+  // Everything below (country list, filters, sort, counts) works on whichever
+  // tab she is looking at.
+  const pool = useMemo(
+    () => (tab === "favorites" ? favoriteHosts : (hosts ?? [])),
+    [tab, favoriteHosts, hosts],
+  );
 
   // Only offer countries that actually have a girl listed.
   const countries = useMemo(() => {
     const codes = new Set<string>();
-    for (const h of hosts ?? []) if (h.country) codes.add(h.country);
+    for (const h of pool) if (h.country) codes.add(h.country);
     return [...codes]
       .map((code) => ({ code, name: COUNTRY_NAME.get(code) ?? code }))
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [hosts]);
+  }, [pool]);
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -96,7 +132,7 @@ function HostsList() {
     const priceOf = (h: NonNullable<typeof hosts>[number]): number =>
       toViewer(h.ratePerMinuteCents, currencyForCountry(h.country));
 
-    const list = (hosts ?? []).filter((h) => {
+    const list = pool.filter((h) => {
       if (q && !h.displayName.toLowerCase().includes(q)) return false;
       if (country && h.country !== country) return false;
       // Unrated girls have no score, so a minimum rating hides them.
@@ -126,7 +162,7 @@ function HostsList() {
       }
     });
   }, [
-    hosts,
+    pool,
     search,
     country,
     minRating,
@@ -153,6 +189,46 @@ function HostsList() {
   return (
     <main className="mx-auto max-w-6xl p-6">
       <h1 className="mb-6 text-3xl font-bold">Book a video call</h1>
+
+      {/* Tabs */}
+      <div
+        role="tablist"
+        aria-label="Girls"
+        className="mb-6 flex gap-2 border-b border-rose-500/30"
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "all"}
+          onClick={(): void => setTab("all")}
+          className={`-mb-px border-b-2 px-4 py-2 text-sm font-semibold transition-colors ${
+            tab === "all"
+              ? "border-rose-500 text-white"
+              : "border-transparent text-neutral-400 hover:text-white"
+          }`}
+        >
+          All girls ({hosts.length})
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "favorites"}
+          onClick={(): void => setTab("favorites")}
+          className={`-mb-px inline-flex items-center gap-1.5 border-b-2 px-4 py-2 text-sm font-semibold transition-colors ${
+            tab === "favorites"
+              ? "border-rose-500 text-white"
+              : "border-transparent text-neutral-400 hover:text-white"
+          }`}
+        >
+          <Star
+            className={`h-4 w-4 ${
+              tab === "favorites" ? "fill-amber-400 text-amber-400" : ""
+            }`}
+            aria-hidden
+          />
+          Favorites ({favoriteHosts.length})
+        </button>
+      </div>
 
       {/* Search + filters */}
       <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -234,7 +310,7 @@ function HostsList() {
       <div className="mb-4 flex items-center justify-between text-sm text-neutral-400">
         <p>
           {visible.length} {visible.length === 1 ? "girl" : "girls"}
-          {filtering && ` of ${hosts.length}`}
+          {filtering && ` of ${pool.length}`}
         </p>
         {filtering && (
           <button
@@ -248,7 +324,16 @@ function HostsList() {
         )}
       </div>
 
-      {visible.length === 0 ? (
+      {tab === "favorites" && favoriteHosts.length === 0 ? (
+        <p className="py-12 text-center text-neutral-400">
+          No favorites yet. Tap the{" "}
+          <Star
+            className="inline h-4 w-4 align-text-bottom text-amber-400"
+            aria-hidden
+          />{" "}
+          on any girl to save her here.
+        </p>
+      ) : visible.length === 0 ? (
         <p className="py-12 text-center text-neutral-400">
           No one matches those filters.
         </p>

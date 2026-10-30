@@ -6,6 +6,8 @@ import { currencyForCountry } from "@/convex/lib/currency";
 import { useNow } from "@/hooks/useNow";
 import { useMoney } from "@/hooks/useMoney";
 import { RatingBadge } from "@/app/components/RateCallPanel";
+import { FavoriteButton } from "@/app/components/FavoriteButton";
+import type { Id } from "@/convex/_generated/dataModel";
 
 type Props = {
   host: {
@@ -35,42 +37,50 @@ export function HostCard({ host }: Props) {
   const hostCurrency = currencyForCountry(host.country);
 
   return (
-    <Link
-      href={`/hosts/${host._id}`}
-      className="accent-card group overflow-hidden rounded-2xl border bg-white/5"
-    >
-      <div className="aspect-[3/4] overflow-hidden bg-neutral-800">
-        {host.avatarUrl && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={host.avatarUrl}
-            alt={host.displayName}
-            className="h-full w-full object-cover transition group-hover:scale-105"
-          />
-        )}
-      </div>
-      <div className="p-4">
-        <h3 className="flex items-center gap-3 font-semibold">
-          {host.country && (
-            <span title={host.country}>{flagOf(host.country)}</span>
+    // The star is a sibling of the link (not inside it) so clicking it never
+    // opens her profile.
+    <div className="relative">
+      <FavoriteButton
+        hostId={host._id as Id<"hosts">}
+        className="absolute right-2 top-2"
+      />
+      <Link
+        href={`/hosts/${host._id}`}
+        className="accent-card group block h-full overflow-hidden rounded-2xl border bg-white/5"
+      >
+        <div className="aspect-[3/4] overflow-hidden bg-neutral-800">
+          {host.avatarUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={host.avatarUrl}
+              alt={host.displayName}
+              className="h-full w-full object-cover transition group-hover:scale-105"
+            />
           )}
-          <span className="truncate">{host.displayName}</span>
-        </h3>
-        <p className="flex items-center justify-between text-sm text-neutral-400">
-          <span>{show(host.ratePerMinuteCents, hostCurrency)}/min</span>
-          <RatingBadge rating={host.rating} />
-        </p>
-        {host.bio && (
-          <p className="mt-2 line-clamp-3 text-sm text-neutral-300">
-            {host.bio}
+        </div>
+        <div className="p-4">
+          <h3 className="flex items-center gap-3 font-semibold">
+            {host.country && (
+              <span title={host.country}>{flagOf(host.country)}</span>
+            )}
+            <span className="truncate">{host.displayName}</span>
+          </h3>
+          <p className="flex items-center justify-between text-sm text-neutral-400">
+            <span>{show(host.ratePerMinuteCents, hostCurrency)}/min</span>
+            <RatingBadge rating={host.rating} />
           </p>
-        )}
-        {host.timezone && (
-          <p className="mt-2 text-xs text-neutral-500">
-            Her time {formatTime(now, host.timezone)}
-          </p>
-        )}
-      </div>
-    </Link>
+          {host.bio && (
+            <p className="mt-2 line-clamp-3 text-sm text-neutral-300">
+              {host.bio}
+            </p>
+          )}
+          {host.timezone && (
+            <p className="mt-2 text-xs text-neutral-500">
+              Her time {formatTime(now, host.timezone)}
+            </p>
+          )}
+        </div>
+      </Link>
+    </div>
   );
 }

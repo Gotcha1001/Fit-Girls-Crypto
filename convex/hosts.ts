@@ -173,7 +173,11 @@ export const getHostForPayout = internalQuery({
       .withIndex("by_user", (q) => q.eq("userId", user._id))
       .unique();
     if (!host) return null;
-    return { hostId: host._id, hasPayout: !!host.payoutAccountRef };
+    return {
+      hostId: host._id,
+      hasPayout: !!host.payoutAccountRef,
+      currentAddress: host.payoutAccountRef ?? null,
+    };
   },
 });
 
