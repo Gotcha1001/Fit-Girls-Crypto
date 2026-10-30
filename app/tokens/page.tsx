@@ -5,6 +5,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useAction, useQuery } from "convex/react";
+import { ConvexError } from "convex/values";
 import { Loader2, ShieldCheck } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import { useAppearance } from "@/app/context/AppearanceContext";
@@ -28,8 +29,8 @@ export default function TokensPage(): React.JSX.Element {
   // Clients have no profile: the balance lives on the user (users.tokens).
 
   const purchases = useQuery(api.tokens.listMyPurchases);
-  // convex/tokenPayments.ts -> createPurchase (server-side price) -> Paystack
-  // transaction/initialize. Returns the hosted Paystack checkout URL.
+  // convex/tokenPayments.ts -> createPurchase (server-side price) -> Plisio
+  // invoice. Returns the hosted crypto (USDT) checkout URL.
 
   const initializePayment = useAction(api.tokenPayments.initialize);
 
@@ -48,11 +49,13 @@ export default function TokensPage(): React.JSX.Element {
       // NEXT_PUBLIC_SITE_URL is the ngrok URL in dev; falls back to the current origin.
       const siteUrl = window.location.origin;
       const { url } = await initializePayment({ packageId, siteUrl });
-      // On success the browser leaves for Paystack, so busyId stays set.
+      // On success the browser leaves for the crypto checkout, so busyId stays set.
       window.location.assign(url);
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "Could not start the payment.",
+        err instanceof ConvexError
+          ? String(err.data)
+          : "Could not start the payment.",
       );
       setBusyId(null);
     }
@@ -74,7 +77,7 @@ export default function TokensPage(): React.JSX.Element {
         </h1>
         <p className="text-sm text-slate-500 dark:text-stone-400">
           Tokens pay for the gifts you send. Buy a package and they&apos;re
-          added as soon as Paystack confirms the payment.
+          added as soon as your USDT payment is confirmed.
         </p>
       </div>
 
@@ -160,7 +163,8 @@ export default function TokensPage(): React.JSX.Element {
         )}
         <p className="mt-4 flex items-center gap-1.5 text-xs text-slate-500 dark:text-stone-400">
           <ShieldCheck className="h-3.5 w-3.5" />
-          Secure payment by Paystack. Your card details never touch Spark.
+          Secure crypto payment in USDT (TRON network). Your wallet details
+          never touch Spark.
         </p>
       </section>
 

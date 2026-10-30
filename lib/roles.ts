@@ -29,9 +29,10 @@ function allowedFor(u: AccountUser): string[] {
     return [
       "/hosts",
       "/bookings",
-      "/photos", // NEW: My Photos, and where Paystack sends them back after paying
+      "/photos", // My Photos (unlocked secret photos)
       "/call",
       "/tokens",
+      "/wallet", // credit from missed calls; must open even with a zero balance
       "/gifts",
       "/directions", // how to buy USDT and pay for a booking
       "/settings",

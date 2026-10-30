@@ -27,8 +27,7 @@ export default function TokenPurchaseSuccessPage({
   // the viewer's own currency.
 
   const { show } = useMoney();
-  // Live query: flips to "paid" the moment the Paystack webhook lands.
-  // (Paystack also adds ?reference=... to this URL; we don't need it.)
+  // Live query: flips to "paid" the moment the Plisio webhook lands.
 
   const purchase = useQuery(api.tokens.getForPayment, {
     purchaseId: purchaseId as Id<"tokenPurchases">,
@@ -113,8 +112,8 @@ export default function TokenPurchaseSuccessPage({
           Confirming your payment…
         </h1>
         <p className="text-slate-600 dark:text-stone-400">
-          Paystack is notifying us. This usually takes a few seconds, hang
-          tight.
+          Waiting for the USDT payment to be confirmed on the network. This
+          usually takes a few seconds, hang tight.
         </p>
       </div>
     );
@@ -127,8 +126,8 @@ export default function TokenPurchaseSuccessPage({
       </h1>
       <p className="text-slate-600 dark:text-stone-400">
         Your payment hasn&apos;t been confirmed yet. If you were charged, your
-        tokens will appear automatically once Paystack confirms it, no need to
-        pay again.
+        tokens will appear automatically once the USDT payment is confirmed, no
+        need to pay again.
       </p>
       <Link
         href="/tokens"

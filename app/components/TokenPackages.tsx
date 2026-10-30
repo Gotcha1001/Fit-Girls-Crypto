@@ -3,6 +3,7 @@
 
 import { useState } from "react";
 import { useAction, useQuery } from "convex/react";
+import { ConvexError } from "convex/values";
 import { Coins, Loader2 } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import { useAppearance } from "@/app/context/AppearanceContext";
@@ -25,11 +26,13 @@ export function TokenPackages(): React.JSX.Element {
       const siteUrl =
         process.env.NEXT_PUBLIC_SITE_URL ?? window.location.origin;
       const { url } = await initializePayment({ packageId, siteUrl });
-      // On success the browser leaves for Paystack, so we never reset busyId.
+      // On success the browser leaves for the crypto checkout, so we never reset busyId.
       window.location.assign(url);
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "Could not start the payment.",
+        err instanceof ConvexError
+          ? String(err.data)
+          : "Could not start the payment.",
       );
       setBusyId(null);
     }
@@ -121,8 +124,8 @@ export function TokenPackages(): React.JSX.Element {
       )}
 
       <p className="text-xs text-slate-500 dark:text-stone-400">
-        Secure payment by Paystack. Tokens are added to your balance as soon as
-        the payment is confirmed.
+        Secure crypto payment in USDT (TRON network). Tokens are added to your
+        balance as soon as the payment is confirmed.
       </p>
 
       {purchases && purchases.length > 0 && (
