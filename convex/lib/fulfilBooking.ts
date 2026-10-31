@@ -1,4 +1,4 @@
-// convex/lib/fulfilBooking.ts  (NEW FILE)
+// convex/lib/fulfilBooking.ts
 //
 // ONE place that turns a pending_payment booking into a paid, joinable one.
 // Used by:
@@ -6,9 +6,10 @@
 //   - wallet.spendOnBooking    (paid with wallet credit)
 //
 // It: marks the booking paid, creates the call room (callSessions row),
-// queues the host's payout, and arms the no-show check.
+// queues the host's payout, arms the no-show check, and notifies the host.
 import { MutationCtx } from "../_generated/server";
 import { Doc, Id } from "../_generated/dataModel";
+import { internal } from "../_generated/api";
 import { scheduleNoShowCheck } from "../noShowConfig";
 
 const MIN_MS = 60_000;
@@ -42,6 +43,7 @@ export async function fulfilPaidBooking(
       .query("callSessions")
       .withIndex("by_booking", (q) => q.eq("bookingId", booking._id))
       .first();
+
     if (!existingSession) {
       await ctx.db.insert("callSessions", {
         requesterId: booking.guestId,
@@ -61,10 +63,12 @@ export async function fulfilPaidBooking(
       .query("hostPayouts")
       .withIndex("by_payment", (q) => q.eq("paymentId", paymentId))
       .first();
+
     if (!existingPayout) {
       const releaseAt =
         (booking.endsAt ?? booking.startsAt + booking.minutes * MIN_MS) +
         BOOKING_HOLD_MS;
+
       await ctx.db.insert("hostPayouts", {
         hostId: booking.hostId,
         paymentId,
@@ -78,4 +82,9 @@ export async function fulfilPaidBooking(
 
   // 4. arm the no-show check
   await scheduleNoShowCheck(ctx, booking);
+
+  // 5. push notification to the host (runs right after this mutation commits)
+  await ctx.scheduler.runAfter(0, internal.pushActions.notifyHostOfBooking, {
+    bookingId: booking._id,
+  });
 }

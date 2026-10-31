@@ -1,16 +1,13 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
-
 // Shared gender/preference vocabulary used on profiles.
 const genderValidator = v.union(
   v.literal("male"),
   v.literal("female"),
   v.literal("non_binary"),
 );
-
 export default defineSchema({
   // ───────────── EXISTING DATING TABLES (kept) ─────────────
-
   users: defineTable({
     clerkId: v.string(),
     email: v.string(),
@@ -41,7 +38,6 @@ export default defineSchema({
   })
     .index("by_clerk_id", ["clerkId"])
     .index("by_role", ["role"]), // NEW: first-admin check
-
   profiles: defineTable({
     userId: v.id("users"),
     displayName: v.string(),
@@ -59,7 +55,6 @@ export default defineSchema({
   })
     .index("by_user", ["userId"])
     .index("by_gender", ["gender"]),
-
   conversations: defineTable({
     userAId: v.id("users"),
     userBId: v.id("users"),
@@ -70,7 +65,6 @@ export default defineSchema({
     .index("by_userA", ["userAId"])
     .index("by_userB", ["userBId"])
     .index("by_pair", ["userAId", "userBId"]),
-
   messages: defineTable({
     conversationId: v.id("conversations"),
     senderId: v.id("users"),
@@ -81,7 +75,6 @@ export default defineSchema({
   })
     .index("by_conversation", ["conversationId"])
     .index("by_conversation_unread", ["conversationId", "readAt"]),
-
   giftTransactions: defineTable({
     fromUserId: v.id("users"),
     toUserId: v.id("users"),
@@ -94,7 +87,6 @@ export default defineSchema({
     .index("by_recipient", ["toUserId"])
     .index("by_sender", ["fromUserId"])
     .index("by_recipient_unseen", ["toUserId", "seenAt"]),
-
   uploadedAssets: defineTable({
     userId: v.id("users"),
     publicId: v.string(),
@@ -102,7 +94,6 @@ export default defineSchema({
   })
     .index("by_public_id", ["publicId"])
     .index("by_user", ["userId"]),
-
   // SHARED by dating call requests AND paid bookings.
   // A paid booking creates a row with requesterId = guest, recipientId = host's
   // user, status "accepted", scheduledFor = booking start, and bookingId set.
@@ -125,7 +116,6 @@ export default defineSchema({
     .index("by_recipient_status", ["recipientId", "status"])
     .index("by_booking", ["bookingId"])
     .index("by_roomName", ["roomName"]),
-
   likes: defineTable({
     fromUserId: v.id("users"),
     toUserId: v.id("users"),
@@ -134,7 +124,6 @@ export default defineSchema({
     .index("by_sender", ["fromUserId"])
     .index("by_recipient", ["toUserId"])
     .index("by_pair", ["fromUserId", "toUserId"]),
-
   // A client's favourite girls (many per client). Separate from "likes",
   // which are user-to-user.
   favorites: defineTable({
@@ -144,7 +133,6 @@ export default defineSchema({
   })
     .index("by_user", ["userId"])
     .index("by_pair", ["userId", "hostId"]),
-
   tokenPurchases: defineTable({
     userId: v.id("users"),
     packageId: v.string(),
@@ -157,7 +145,6 @@ export default defineSchema({
   })
     .index("by_user", ["userId"])
     .index("by_paystackReference", ["paystackReference"]),
-
   failedPayments: defineTable({
     paymentId: v.string(),
     purchaseId: v.optional(v.id("tokenPurchases")),
@@ -167,9 +154,7 @@ export default defineSchema({
     timestamp: v.number(),
     resolved: v.boolean(),
   }),
-
   // ───────────── NEW MARKETPLACE TABLES ─────────────
-
   hosts: defineTable({
     userId: v.id("users"),
     displayName: v.string(),
@@ -201,7 +186,6 @@ export default defineSchema({
   })
     .index("by_user", ["userId"])
     .index("by_status", ["status"]),
-
   // ── Host weekly hours (0 = Mon … 6 = Sun) ──
   hostWeeklyHours: defineTable({
     hostId: v.id("hosts"),
@@ -210,7 +194,6 @@ export default defineSchema({
   })
     .index("by_host", ["hostId"])
     .index("by_host_weekday", ["hostId", "weekday"]),
-
   hostDayOverrides: defineTable({
     hostId: v.id("hosts"),
     dayIndex: v.number(), // day index in the HOST's timezone (since 1970-01-01)
@@ -218,7 +201,6 @@ export default defineSchema({
   })
     .index("by_host", ["hostId"])
     .index("by_host_day", ["hostId", "dayIndex"]),
-
   bookings: defineTable({
     hostId: v.id("hosts"),
     guestId: v.id("users"),
@@ -255,7 +237,6 @@ export default defineSchema({
     .index("by_guest", ["guestId"])
     .index("by_roomName", ["roomName"]) // NEW
     .index("by_status_startsAt", ["status", "startsAt"]), // NEW
-
   // One score (1-10) per booking, left by the client after the call.
   ratings: defineTable({
     bookingId: v.id("bookings"),
@@ -266,7 +247,6 @@ export default defineSchema({
   })
     .index("by_booking", ["bookingId"])
     .index("by_host", ["hostId"]),
-
   galleryItems: defineTable({
     hostId: v.id("hosts"),
     storageId: v.id("_storage"),
@@ -279,7 +259,6 @@ export default defineSchema({
       v.literal("rejected"),
     ),
   }).index("by_host", ["hostId"]),
-
   purchases: defineTable({
     galleryItemId: v.id("galleryItems"),
     buyerId: v.id("users"),
@@ -287,7 +266,6 @@ export default defineSchema({
   })
     .index("by_buyer", ["buyerId"])
     .index("by_item_buyer", ["galleryItemId", "buyerId"]),
-
   payments: defineTable({
     kind: v.union(v.literal("booking"), v.literal("gallery")),
     refId: v.string(),
@@ -308,7 +286,6 @@ export default defineSchema({
   })
     .index("by_reference", ["providerReference"])
     .index("by_payer", ["payerId"]),
-
   hostPayouts: defineTable({
     hostId: v.id("hosts"),
     paymentId: v.id("payments"),
@@ -332,7 +309,6 @@ export default defineSchema({
     .index("by_host_status", ["hostId", "status"])
     .index("by_host", ["hostId"])
     .index("by_payment", ["paymentId"]),
-
   // A girl's application. The access code is stored only as a hash.
   hostApplications: defineTable({
     userId: v.id("users"),
@@ -357,19 +333,16 @@ export default defineSchema({
   })
     .index("by_user", ["userId"])
     .index("by_status", ["status"]),
-
   blocks: defineTable({
     hostId: v.id("hosts"),
     blockedUserId: v.id("users"),
   }).index("by_host_user", ["hostId", "blockedUserId"]),
-
   reports: defineTable({
     reporterId: v.id("users"),
     targetUserId: v.id("users"),
     reason: v.string(),
     resolved: v.boolean(),
   }),
-
   secretPhotos: defineTable({
     hostId: v.id("hosts"),
     fullStorageId: v.id("_storage"),
@@ -378,7 +351,6 @@ export default defineSchema({
     createdAt: v.number(),
     removedAt: v.optional(v.number()),
   }).index("by_host", ["hostId"]),
-
   secretPhotoOrders: defineTable({
     buyerId: v.id("users"),
     hostId: v.id("hosts"),
@@ -398,7 +370,6 @@ export default defineSchema({
   })
     .index("by_buyer", ["buyerId"])
     .index("by_host_status", ["hostId", "status"]),
-
   secretPhotoPurchases: defineTable({
     photoId: v.id("secretPhotos"),
     buyerId: v.id("users"),
@@ -411,13 +382,11 @@ export default defineSchema({
   })
     .index("by_buyer", ["buyerId"])
     .index("by_photo_buyer", ["photoId", "buyerId"]),
-
   fxRates: defineTable({
     base: v.string(), // "USD"
     rates: v.record(v.string(), v.number()), // units of each currency per 1 USD
     updatedAt: v.number(),
   }),
-
   walletTransactions: defineTable({
     userId: v.id("users"), // the guest
     bookingId: v.optional(v.id("bookings")),
@@ -429,4 +398,15 @@ export default defineSchema({
   })
     .index("by_user", ["userId"])
     .index("by_booking_reason", ["bookingId", "reason"]),
+  // ───────────── WEB PUSH (one row per device / browser) ─────────────
+  pushSubscriptions: defineTable({
+    userId: v.id("users"),
+    clerkId: v.string(),
+    endpoint: v.string(),
+    subscription: v.string(), // JSON.stringify(PushSubscriptionJSON)
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_userId", ["userId"])
+    .index("by_endpoint", ["endpoint"]),
 });

@@ -49,6 +49,8 @@ import type * as notifications from "../notifications.js";
 import type * as payments from "../payments.js";
 import type * as payoutQueue from "../payoutQueue.js";
 import type * as profiles from "../profiles.js";
+import type * as pushActions from "../pushActions.js";
+import type * as pushSubscriptions from "../pushSubscriptions.js";
 import type * as ratings from "../ratings.js";
 import type * as roles from "../roles.js";
 import type * as secretPhotoPayments from "../secretPhotoPayments.js";
@@ -107,6 +109,8 @@ declare const fullApi: ApiFromModules<{
   payments: typeof payments;
   payoutQueue: typeof payoutQueue;
   profiles: typeof profiles;
+  pushActions: typeof pushActions;
+  pushSubscriptions: typeof pushSubscriptions;
   ratings: typeof ratings;
   roles: typeof roles;
   secretPhotoPayments: typeof secretPhotoPayments;

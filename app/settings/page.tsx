@@ -1,6 +1,7 @@
 // "use client";
 
 // import { useState, type ReactNode } from "react";
+// import { useQuery } from "convex/react";
 // import {
 //   Ban,
 //   Binary,
@@ -10,9 +11,10 @@
 //   Loader2,
 //   RotateCcw,
 // } from "lucide-react";
+
+// import { api } from "@/convex/_generated/api";
 // import { ThemeToggle } from "@/app/components/ThemeToggle";
 // import { useAppearance } from "@/app/context/AppearanceContext";
-
 // import {
 //   GRADIENT_ACCENT_LIST,
 //   RAIN_MODE_LIST,
@@ -24,6 +26,7 @@
 //   type AccentTheme,
 //   type RainMode,
 // } from "@/lib/appearance";
+
 // import { TokenPackages } from "../components/TokenPackages";
 
 // const RAIN_ICONS: Record<RainMode, typeof Binary> = {
@@ -212,6 +215,12 @@
 //   const [hoveredAccent, setHoveredAccent] = useState<AccentId | null>(null);
 //   const rainOff = appearance.rainMode === "off";
 
+//   // Tokens are for clients only. Girls (applicants and approved hosts) and
+//   // admins never see the card. While `me` is still loading we show nothing,
+//   // so the card doesn't flash up for a girl and then disappear.
+//   const me = useQuery(api.user.getMe);
+//   const isClient = me?.role === "user" && me.onboardingChoice === "client";
+
 //   return (
 //     <div className="relative mx-auto flex max-w-2xl flex-col gap-6">
 //       <div className="flex items-start justify-between gap-4">
@@ -245,16 +254,18 @@
 //         </div>
 //       </div>
 
-//       {/* Buy tokens */}
-//       <div id="tokens" className="scroll-mt-6">
-//         <Card
-//           title="Buy tokens"
-//           description="Tokens are used for gifts and video calls. Pick a package and pay securely with PayFast."
-//           hex={hex400}
-//         >
-//           <TokenPackages />
-//         </Card>
-//       </div>
+//       {/* Buy tokens: clients only */}
+//       {isClient && (
+//         <div id="tokens" className="scroll-mt-6">
+//           <Card
+//             title="Buy tokens"
+//             description="Tokens are used for gifts and video calls. Pick a package and pay securely with PayFast."
+//             hex={hex400}
+//           >
+//             <TokenPackages />
+//           </Card>
+//         </div>
+//       )}
 
 //       {/* Accent color */}
 //       <Card
@@ -429,9 +440,7 @@
 //     </div>
 //   );
 // }
-
 "use client";
-
 import { useState, type ReactNode } from "react";
 import { useQuery } from "convex/react";
 import {
@@ -443,7 +452,6 @@ import {
   Loader2,
   RotateCcw,
 } from "lucide-react";
-
 import { api } from "@/convex/_generated/api";
 import { ThemeToggle } from "@/app/components/ThemeToggle";
 import { useAppearance } from "@/app/context/AppearanceContext";
@@ -458,8 +466,8 @@ import {
   type AccentTheme,
   type RainMode,
 } from "@/lib/appearance";
-
 import { TokenPackages } from "../components/TokenPackages";
+import PushNotificationToggle from "../components/PushNotificationToggle";
 
 const RAIN_ICONS: Record<RainMode, typeof Binary> = {
   code: Binary,
@@ -467,7 +475,6 @@ const RAIN_ICONS: Record<RainMode, typeof Binary> = {
   neon: CloudRain,
   off: Ban,
 };
-
 interface CardProps {
   title: string;
   description: string;
@@ -475,7 +482,6 @@ interface CardProps {
   action?: ReactNode;
   children: ReactNode;
 }
-
 function Card({
   title,
   description,
@@ -504,7 +510,6 @@ function Card({
     </section>
   );
 }
-
 interface RangeRowProps {
   id: string;
   label: string;
@@ -515,7 +520,6 @@ interface RangeRowProps {
   disabled: boolean;
   onChange: (value: number) => void;
 }
-
 function RangeRow({
   id,
   label,
@@ -550,7 +554,6 @@ function RangeRow({
     </div>
   );
 }
-
 interface AccentGridProps {
   label: string;
   swatches: AccentTheme[];
@@ -560,7 +563,6 @@ interface AccentGridProps {
   onSelect: (id: AccentId) => void;
   columns: string;
 }
-
 function AccentGrid({
   label,
   swatches,
@@ -640,19 +642,18 @@ function AccentGrid({
     </div>
   );
 }
-
 export default function SettingsPage(): React.JSX.Element {
   const { appearance, theme, update, reset, isSaving } = useAppearance();
   const { hex400 } = theme;
   const [hoveredAccent, setHoveredAccent] = useState<AccentId | null>(null);
   const rainOff = appearance.rainMode === "off";
-
   // Tokens are for clients only. Girls (applicants and approved hosts) and
   // admins never see the card. While `me` is still loading we show nothing,
   // so the card doesn't flash up for a girl and then disappear.
   const me = useQuery(api.user.getMe);
   const isClient = me?.role === "user" && me.onboardingChoice === "client";
-
+  // Booking notifications are for girls (approved hosts) only.
+  const isHost = me?.role === "host";
   return (
     <div className="relative mx-auto flex max-w-2xl flex-col gap-6">
       <div className="flex items-start justify-between gap-4">
@@ -685,7 +686,18 @@ export default function SettingsPage(): React.JSX.Element {
           </button>
         </div>
       </div>
-
+      {/* Booking notifications: hosts only */}
+      {isHost && (
+        <div id="notifications" className="scroll-mt-6">
+          <Card
+            title="Booking notifications"
+            description="Get a notification on this phone or browser the moment someone books you. Turn it on once on every device you use."
+            hex={hex400}
+          >
+            <PushNotificationToggle />
+          </Card>
+        </div>
+      )}
       {/* Buy tokens: clients only */}
       {isClient && (
         <div id="tokens" className="scroll-mt-6">
@@ -698,7 +710,6 @@ export default function SettingsPage(): React.JSX.Element {
           </Card>
         </div>
       )}
-
       {/* Accent color */}
       <Card
         title="Accent color"
@@ -717,7 +728,6 @@ export default function SettingsPage(): React.JSX.Element {
           onSelect={(accent) => update({ accent })}
           columns="grid-cols-3 sm:grid-cols-6"
         />
-
         <p className="mb-2 mt-6 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-stone-400">
           Gradients
         </p>
@@ -731,7 +741,6 @@ export default function SettingsPage(): React.JSX.Element {
           columns="grid-cols-3 sm:grid-cols-5"
         />
       </Card>
-
       {/* Rain */}
       <Card
         title="Rain"
@@ -782,7 +791,6 @@ export default function SettingsPage(): React.JSX.Element {
             );
           })}
         </div>
-
         <div className="mt-6 flex flex-col gap-5">
           <RangeRow
             id="rain-density"
@@ -814,7 +822,6 @@ export default function SettingsPage(): React.JSX.Element {
             disabled={rainOff}
             onChange={(rainOpacity) => update({ rainOpacity })}
           />
-
           <div
             className={`flex items-center justify-between gap-4 ${rainOff ? "opacity-40" : ""}`}
           >
@@ -860,7 +867,6 @@ export default function SettingsPage(): React.JSX.Element {
           </div>
         </div>
       </Card>
-
       {/* Light / dark */}
       <Card
         title="Appearance"
