@@ -310,6 +310,18 @@ export default defineSchema({
     .index("by_reference", ["providerReference"])
     .index("by_payer", ["payerId"]),
 
+  walletTransactions: defineTable({
+    userId: v.id("users"),
+    bookingId: v.optional(v.id("bookings")),
+    type: v.union(v.literal("credit"), v.literal("debit")),
+    amountCents: v.number(), // in CHARGE_CURRENCY cents
+    currency: v.string(),
+    reason: v.union(v.literal("host_no_show"), v.literal("booking_payment")),
+    createdAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_booking_reason", ["bookingId", "reason"]),
+
   hostPayouts: defineTable({
     hostId: v.id("hosts"),
     paymentId: v.id("payments"),
