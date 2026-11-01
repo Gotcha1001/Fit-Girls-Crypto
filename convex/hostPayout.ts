@@ -1,7 +1,7 @@
 // convex/hostPayout.ts
 //
-// A girl saves her USDT (TRON / TRC-20) wallet address once. It is public
-// information (not a secret like a bank login), but it is never sent back to
+// A girl saves her USDT (TRON / TRC-20) wallet address, and can change it
+// later (upsert). It is public information (not a secret like a bank login), but it is never sent back to
 // the browser: only the last 4 characters are shown.
 import { action } from "./_generated/server";
 import { internal } from "./_generated/api";
@@ -25,8 +25,13 @@ export const setupPayout = action({
       clerkId: identity.subject,
     });
     if (!host) throw new Error("Save your profile first");
-    if (host.hasPayout) {
-      throw new Error("Payout wallet already set up. Contact support to change it.");
+    if (host.currentAddress === address) {
+      throw new Error("That is already your payout wallet.");
+    }
+    if (host.payoutInFlight) {
+      throw new Error(
+        "A payout is being sent right now. Please try again in a few minutes.",
+      );
     }
 
     await ctx.runMutation(internal.hosts.savePayout, {

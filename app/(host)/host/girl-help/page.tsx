@@ -67,8 +67,8 @@ export default function GirlHelpPage(): React.JSX.Element {
           search USDT and switch on the Tron (TRC-20) one.
         </p>
         <p>
-          <b>I saved the wrong address.</b> Contact support straight away,
-          before your next payout.
+          <b>I saved the wrong address.</b> Go to your Profile, tap Change
+          wallet and save the right one, ideally before your next payout.
         </p>
         <p>
           <b>Someone asked for my 12 words.</b> Never send them. We will never

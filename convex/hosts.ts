@@ -177,6 +177,14 @@ export const getHostForPayout = internalQuery({
       hostId: host._id,
       hasPayout: !!host.payoutAccountRef,
       currentAddress: host.payoutAccountRef ?? null,
+      // A batch already on its way keeps the address it was claimed with, so
+      // changing the wallet mid-send would be confusing. Block it briefly.
+      payoutInFlight: !!(await ctx.db
+        .query("hostPayouts")
+        .withIndex("by_host_status", (q) =>
+          q.eq("hostId", host._id).eq("status", "processing"),
+        )
+        .first()),
     };
   },
 });
@@ -192,6 +200,7 @@ export const savePayout = internalMutation({
       payoutProvider: "plisio",
       payoutAccountRef,
       bankLast4,
+      payoutChangedAt: Date.now(),
     });
   },
 });
