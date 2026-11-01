@@ -65,6 +65,7 @@ export default function HostOnboarding() {
 
   const [wallet, setWallet] = useState("");
   const [walletConfirm, setWalletConfirm] = useState("");
+  const [changingWallet, setChangingWallet] = useState(false);
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -182,7 +183,10 @@ export default function HostOnboarding() {
       await setupPayout({ walletAddress: a });
       setWallet("");
       setWalletConfirm("");
-      setDone("Payouts are set up.");
+      setDone(
+        host?.payoutReady ? "Payout wallet updated." : "Payouts are set up.",
+      );
+      setChangingWallet(false);
     } catch (err: unknown) {
       setError(errorMessage(err));
     } finally {
@@ -378,14 +382,33 @@ export default function HostOnboarding() {
       {host && (
         <section className={card}>
           <h2 className="text-lg font-semibold">Where we pay you</h2>
-          {host.payoutReady ? (
+          {host.payoutReady && (
             <p className="rounded-lg border border-rose-500/40 bg-rose-600/10 p-3">
               Payouts are sent automatically in USDT (TRC-20) to the wallet
-              ending in <strong>{host.bankLast4}</strong>. To change it, contact
-              support.
+              ending in <strong>{host.bankLast4}</strong>.
             </p>
+          )}
+          {host.payoutReady && !changingWallet ? (
+            <button
+              type="button"
+              className={button}
+              onClick={() => {
+                setError("");
+                setDone("");
+                setChangingWallet(true);
+              }}
+            >
+              Change wallet
+            </button>
           ) : (
             <form onSubmit={onSavePayout} className="space-y-4">
+              {host.payoutReady && (
+                <p className="text-sm text-amber-300">
+                  Changing your wallet affects all future payouts. Double-check
+                  the new address: money sent to a wrong address cannot be
+                  recovered.
+                </p>
+              )}
               <p className="text-sm text-neutral-400">
                 Paste a{" "}
                 <strong>
@@ -423,9 +446,26 @@ export default function HostOnboarding() {
                   required
                 />
               </label>
-              <button className={button} disabled={busy}>
-                Save wallet
-              </button>
+              <div className="flex flex-wrap gap-2">
+                <button className={button} disabled={busy}>
+                  {host.payoutReady ? "Save new wallet" : "Save wallet"}
+                </button>
+                {host.payoutReady && (
+                  <button
+                    type="button"
+                    className={button}
+                    disabled={busy}
+                    onClick={() => {
+                      setChangingWallet(false);
+                      setWallet("");
+                      setWalletConfirm("");
+                      setError("");
+                    }}
+                  >
+                    Cancel
+                  </button>
+                )}
+              </div>
             </form>
           )}
         </section>
