@@ -418,16 +418,15 @@ export default defineSchema({
     rates: v.record(v.string(), v.number()), // units of each currency per 1 USD
     updatedAt: v.number(),
   }),
-
-  walletTransactions: defineTable({
-    userId: v.id("users"), // the guest
-    bookingId: v.optional(v.id("bookings")),
-    type: v.union(v.literal("credit"), v.literal("debit")),
-    amountCents: v.number(), // always positive
-    currency: v.string(),
-    reason: v.union(v.literal("host_no_show"), v.literal("booking_payment")),
+  // ───────────── WEB PUSH (one row per device / browser) ─────────────
+  pushSubscriptions: defineTable({
+    userId: v.id("users"),
+    clerkId: v.string(),
+    endpoint: v.string(),
+    subscription: v.string(), // JSON.stringify(PushSubscriptionJSON)
     createdAt: v.number(),
+    updatedAt: v.number(),
   })
-    .index("by_user", ["userId"])
-    .index("by_booking_reason", ["bookingId", "reason"]),
+    .index("by_userId", ["userId"])
+    .index("by_endpoint", ["endpoint"]),
 });
